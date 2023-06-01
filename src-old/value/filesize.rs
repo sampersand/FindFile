@@ -49,44 +49,6 @@ impl PartialOrd<u64> for FileSize {
 	}
 }
 
-#[derive(Debug, PartialEq)]
-pub enum FileSizeParseError {
-	NoIntPrefix,
-	InvalidSuffix,
-}
-
-impl std::str::FromStr for FileSize {
-	type Err = FileSizeParseError;
-
-	fn from_str(source: &str) -> Result<Self, Self::Err> {
-		let (prefix, suffix) = source
-			.find(|c: char| !c.is_ascii_digit())
-			.map(|idx| source.split_at(idx))
-			.ok_or(FileSizeParseError::NoIntPrefix)?;
-
-		let value: u64 = prefix.parse().or(Err(FileSizeParseError::NoIntPrefix))?;
-
-		// delete trailing `b` / `B` if given
-		let base = match suffix.to_lowercase().as_str() {
-			"k" | "kb" => Self::KILOBTYE,
-			"mb" => Self::MEGABYTE,
-			"g" | "gb" => Self::GIGABYTE,
-			"t" | "tb" => Self::TERABYTE,
-			"pb" => Self::PETABYTE,
-			"eb" => Self::EXABYTE,
-			"kib" => Self::KIBIBTYE,
-			"mib" => Self::MEBIBYTE,
-			"gib" => Self::GIBIBYTE,
-			"tib" => Self::TEBIBYTE,
-			"pib" => Self::PEBIBYTE,
-			"eib" => Self::EXIBYTE,
-			_ => return Err(FileSizeParseError::InvalidSuffix),
-		};
-
-		Ok(base.mul(value))
-	}
-}
-
 impl Display for FileSize {
 	// even tho we're using floating point numbers, there shouldn't be any errors until you hit
 	// 1.0/f64::EPSILON, which will be in the yottabyte range.

@@ -1,0 +1,55 @@
+
+atom
+ := '(' expression ')'
+  | variable  | dollar-variable
+  | shell-function
+  | string
+  | number
+  | filesize
+  | time | date
+  | pcre-regex | posix-regex
+  ;
+
+variable := ALPHA ++ {ALPHA | DIGIT};
+dollar-variable := '$' ++ (DIGITS | variable) ; (* digits are command line args, vars are env vars *)
+
+shell-function := '`' ++ ... ++ '`' ;
+number := ['-' | '+'] DIGITS ++ ['.' DIGITS] ++  [('e' | 'E') ++ ['-' | '+'] ++ DIGITS] ;
+filesize := number ++ filesize-suffix ;
+filesize-suffix
+ := ('k' | 'M' | 'G' | 'T' | 'P' | 'E') ++ 'B'
+  | ('K' | 'M' | 'G' | 'T' | 'P' | 'E') ++ 'iB' (* note `K~ is upper case *)
+  ;
+
+time := number ++ ('ns' | 'ms' | 's' | 'm' | 'h' | 'd' | 'w' | 'm' | 'y') ;
+date := ???? ;
+
+string := normal-string | raw-string ;
+normal-string := '"' ++ {interpolation | escape-sequence | (? any non-`"` char ?)} ++ '"' ;
+interpolation := dollar-variable | '{' expression '}';
+escape-sequence
+ := '\' ++ ('\' | '"' | ''' | 'r' | 'n' | 't' | 'f' | 'v' | '0' | '{' | '}')
+  | '\x' ++ HEX_DIGIT ++ HEX_DIGIT 
+  | '\u' ++ HEX_DIGIT ++ HEX_DIGIT ++ HEX_DIGIT ++ HEX_DIGIT
+  ;
+raw-string
+ := 'r'
+ ++ (? any amount of `#`s ?)
+ ++ '"'
+ ++ (? any sequence of charcaters but `"` followed by the same amount of `#` ?)
+ ++ '"'
+ ++ (? the same amount of `#`s)
+  ;
+
+pcre-regex := '/' ++ (? pcre regex stuff ?) ++ '/' ;
+posix-regex := ????? ;
+
+
+(* token constants *)
+ALPHA := (? any unicode alpha character, plus `_` ?);
+DIIGT := (? any `0` thru `9` digit ?)
+DIGITS := DIGIT {'_' | DIGIT}
+
+___
+
+
