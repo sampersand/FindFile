@@ -1,0 +1,13 @@
+so, ff has a lot of different literals. let's try to enumerate them and see how it goes
+
+digits := DIGIT {DIGIT | '_'} ;
+integer := digits | 0[xX][\da-fA-F_]+ | 0[oO][0-7_]+ | 0[bB][01_]+ ;
+float := digits['.' digits][('e' | 'E')["+" | "-"]digits] ;
+numeric := integer | float;
+
+numbers:
+	123 - normal intege
+	0x1a - hex (. issue: no way to do hex byte literals (`0x1aB`) is not `0x1a` bytes...
+	0o17 - octal
+	0b101 - binary
+	123[.45][(e|E)(-|+)?digit]

@@ -3,6 +3,21 @@ use os_str_bytes::OsStringBytes;
 use std::ffi::OsString;
 use std::fmt::{self, Debug, Formatter};
 
+/*
+How do you use a `$` variable as:
+	- regex: $/$x/
+	- string: just $x, or ${x} and nothing else
+	- plain number: 0${x} -- we don't use octal prefix
+	- size: ${x}mb
+$/{x}/ - regex literal, nothing special
+
+just plain `$x` -- string
+"a${x}b" - lets you embed `x`
+${x} - also string
+#{x} - integer, possible suffix
+/{x} - path (?)
+
+*/
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BeginPathKind {
 	Root,     // `/`
@@ -14,6 +29,12 @@ pub enum BeginPathKind {
 
 #[derive(Clone, PartialEq)]
 pub enum Token {
+	// misc
+	Raw(Vec<u8>),
+	CliArg(isize),
+	EnvVar(OsString),
+	Variable(OsString),
+
 	// Begin / end pairs
 	BeginPath(BeginPathKind),
 	EndPath,
@@ -22,17 +43,42 @@ pub enum Token {
 	BeginRegex,
 	EndRegex,
 	BeginBraceEscape, //
-	EndBrace,         // also used for `BeginBlockStart` and `EndBlockStart`
+	EndBraceEscape,   //
 
 	// Block delims
-	EndBlockStart,
-	BeginBlockStart,
-	LeftParen,
-	RightParen,
+	BeginBlockStart, // `^(`
+	EndBlockStart,   // `$(`
+	LeftParen,       // `(`
+	RightParen,      // `)`
 
-	Raw(Vec<u8>),
-	CliArg(isize),
-	EnvVar(OsString),
+	// control characters
+	Question, // `?`
+	Colon,    // `:`
+	Comma,    // `,`
+	And,      // `&`
+	Or,       // `|`
+	Equal,    // `=`
+
+	// Math
+	Add,            // `+`
+	AddAssign,      // `+=`
+	Subtract,       // `-`
+	SubtractAssign, // `-=`
+	Multiply,       // `*`
+	MultiplyAssign, // `*=`
+	Divide,         // `//` or `/` followed by a space (todo: make it non-path char)
+	DivideAssign,   // `/=` (for `/=` the path, do `/\=`)
+	Modulo,         // `%`
+	ModuloAssign,   // `%=`
+
+	// logic
+	NotEqual,           // `!=`
+	Not,                // `!`
+	Assign,             // `==`
+	LessThanOrEqual,    // `<=`
+	LessThan,           // `<`
+	GreaterThanOrEqual, // `>=`
+	GreaterThan,        // `>`
 }
 
 impl Debug for Token {
@@ -45,7 +91,7 @@ impl Debug for Token {
 			Self::BeginRegex => write!(f, "Token::BeginRegex"),
 			Self::EndRegex => write!(f, "Token::EndRegex"),
 			Self::BeginBraceEscape => write!(f, "Token::BeginBraceEscape"),
-			Self::EndBrace => write!(f, "Token::EndBrace"),
+			Self::EndBraceEscape => write!(f, "Token::EndBraceEscape"),
 			Self::Raw(raw) => {
 				if let Ok(s) = std::str::from_utf8(&raw) {
 					write!(f, "Token::Raw({s:?})")
@@ -61,7 +107,48 @@ impl Debug for Token {
 					write!(f, "Token::EnvVar({var:?}")
 				}
 			}
-			_ => todo!(),
+			Self::Variable(var) => {
+				if let Some(s) = var.to_str() {
+					write!(f, "Token::Variable({s:?})")
+				} else {
+					write!(f, "Token::Variable({var:?}")
+				}
+			}
+
+			// Block delims
+			Self::BeginBlockStart => write!(f, "Token[^(]"),
+			Self::EndBlockStart => write!(f, "Token[$(]"),
+			Self::LeftParen => write!(f, "Token[(]"),
+			Self::RightParen => write!(f, "Token[)]"),
+
+			// control characters
+			Self::Question => write!(f, "Token(?)"),
+			Self::Colon => write!(f, "Token(:)"),
+			Self::Comma => write!(f, "Token(,)"),
+			Self::And => write!(f, "Token(&)"),
+			Self::Or => write!(f, "Token(|)"),
+			Self::Equal => write!(f, "Token(=)"),
+
+			// Math
+			Self::Add => write!(f, "Token(+)"),
+			Self::AddAssign => write!(f, "Token(+=)"),
+			Self::Subtract => write!(f, "Token(-)"),
+			Self::SubtractAssign => write!(f, "Token(-=)"),
+			Self::Multiply => write!(f, "Token(*)"),
+			Self::MultiplyAssign => write!(f, "Token(*=)"),
+			Self::Divide => write!(f, "Token(//)"),
+			Self::DivideAssign => write!(f, "Token(//=)"),
+			Self::Modulo => write!(f, "Token(%)"),
+			Self::ModuloAssign => write!(f, "Token(%=)"),
+
+			// logic
+			Self::NotEqual => write!(f, "Token(!=)"),
+			Self::Not => write!(f, "Token(!)"),
+			Self::Assign => write!(f, "Token(==)"),
+			Self::LessThanOrEqual => write!(f, "Token(<=)"),
+			Self::LessThan => write!(f, "Token(<)"),
+			Self::GreaterThanOrEqual => write!(f, "Token(>=)"),
+			Self::GreaterThan => write!(f, "Token(>)"),
 		}
 	}
 }
@@ -213,16 +300,19 @@ impl Token {
 	}
 
 	fn parse_dollar_sign_escape(ctx: &mut ParseContext) -> Result<Self, ParseError> {
+		let result = Self::parse_dollar_sign(ctx)?;
+		ctx.pop_phase(Phase::DollarSignEscape);
+		Ok(result)
+	}
+
+	fn parse_dollar_sign(ctx: &mut ParseContext) -> Result<Self, ParseError> {
 		let braced = ctx.stream.take_if_byte(b'{');
 
-		let result = match ctx.stream.peek().expect("called parse_dollar_sign_escape at eof") {
+		match ctx.stream.peek().expect("called parse_dollar_sign at eof") {
 			x if x.is_ascii_digit() || x == b'-' || x == b'+' => Self::parse_cli_arg(ctx, braced),
 			x if x.is_ascii_alphabetic() || x == b'_' => Self::parse_env_var(ctx, braced),
 			_ => Err(ParseError::InvalidDollarSign),
-		}?;
-
-		ctx.pop_phase(Phase::DollarSignEscape);
-		Ok(result)
+		}
 	}
 
 	fn parse_within_string(ctx: &mut ParseContext) -> Result<Self, ParseError> {
@@ -269,19 +359,24 @@ impl Token {
 			Some(Phase::WithinString) => Self::parse_within_string(ctx).map(Some),
 			Some(Phase::WithinRegex) => todo!(),
 			Some(Phase::DollarSignEscape) => Self::parse_dollar_sign_escape(ctx).map(Some),
+
 			Some(Phase::BraceEscape) => {
 				match Self::parse_normal(ctx) {
 					Ok(None) => Err(ParseError::MissingEndingBrace),
-					Ok(Some(Self::EndBrace)) => {
+					Ok(Some(Self::EndBraceEscape)) => {
 						ctx.pop_phase(Phase::BraceEscape);
 						debug_assert_ne!(ctx.phase(), None); // brace escape is only within another phase
-						Ok(Some(Token::EndBrace))
+						Ok(Some(Token::EndBraceEscape))
 					}
 					other => other,
 				}
 			}
 			None => Self::parse_normal(ctx),
 		}
+	}
+
+	fn parse_number(ctx: &mut ParseContext) -> Result<Self, ParseError> {
+		todo!()
 	}
 
 	fn parse_path_prefix(ctx: &mut ParseContext) -> Result<Option<Self>, ParseError> {
@@ -325,6 +420,12 @@ impl Token {
 		// Otherwise, do this
 		let Some(c) = ctx.stream.take() else { return Err(ParseError::Eof); };
 
+		macro_rules! ifeq {
+			($if_eq:ident, $if_not:ident) => {
+				Ok(Some(if ctx.stream.take_if_byte(b'=') { Self::$if_eq } else { Self::$if_not }))
+			};
+		}
+
 		match c {
 			// Start of compound literals
 			b'"' => {
@@ -339,10 +440,42 @@ impl Token {
 			// Block and delims
 			b'$' if ctx.stream.take_if_byte(b'{') => Ok(Some(Self::EndBlockStart)),
 			b'^' if ctx.stream.take_if_byte(b'{') => Ok(Some(Self::BeginBlockStart)),
-			b'}' => Ok(Some(Self::EndBrace)),
+			b'}' => Ok(Some(Self::EndBraceEscape)),
 			b'(' => Ok(Some(Self::LeftParen)),
 			b')' => Ok(Some(Self::RightParen)),
 
+			// Control Characters
+			b'?' => Ok(Some(Self::Question)), // TODO: this can conflict with `?/`
+			b':' => Ok(Some(Self::Colon)),
+			b',' => Ok(Some(Self::Comma)),
+			b'&' => Ok(Some(Self::And)),
+			b'|' => Ok(Some(Self::Or)),
+
+			// Math
+			b'+' => ifeq!(AddAssign, Add),
+			b'-' => ifeq!(SubtractAssign, Subtract),
+			b'*' => ifeq!(MultiplyAssign, Multiply),
+			b'/' if ctx.stream.take_if_byte(b'/') => ifeq!(DivideAssign, Divide),
+			b'/' if ctx.stream.take_if_byte(b'=') => Ok(Some(Self::DivideAssign)),
+			b'/' if ctx.stream.peek().map_or(false, |c| c.is_ascii_whitespace()) => {
+				Ok(Some(Self::Divide))
+			}
+			b'%' => ifeq!(ModuloAssign, Modulo),
+
+			// Logic
+			b'!' => ifeq!(NotEqual, Not),
+			b'=' => ifeq!(Equal, Assign),
+			b'<' => ifeq!(LessThanOrEqual, LessThan),
+			b'>' => ifeq!(GreaterThanOrEqual, GreaterThan),
+
+			b'$' => Self::parse_dollar_sign(ctx).map(Some),
+			x if x.is_ascii_alphabetic() || c == b'_' => {
+				let buf = ctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
+				Ok(Some(Self::Variable(OsString::assert_from_raw_vec(buf))))
+			}
+			x if x.is_ascii_digit() => Self::parse_number(ctx).map(Some),
+
+			// misc
 			_ => Err(ParseError::UnknownTokenStart(c as char)),
 		}
 	}
