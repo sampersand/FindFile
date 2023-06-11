@@ -11,19 +11,27 @@ pub enum Phase {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ParseContext<'a> {
+pub struct LexContext<'a> {
 	pub(super) stream: Stream<'a>,
 	phases: Vec<Phase>,
 	tokens: Vec<Token>,
 }
 
-impl<'a> ParseContext<'a> {
+impl<'a> LexContext<'a> {
 	pub fn new(source: &'a OsStr) -> Self {
 		Self {
 			stream: Stream::new(source),
 			phases: Vec::with_capacity(2), // sensible defaults
 			tokens: Vec::with_capacity(2),
 		}
+	}
+
+	pub fn get_cli(&self, pos: isize) -> Option<&OsStr> {
+		todo!()
+	}
+
+	pub fn get_env(&self, pos: &OsStr) -> Option<&OsStr> {
+		todo!()
 	}
 
 	pub fn phase(&self) -> Option<Phase> {
@@ -39,8 +47,33 @@ impl<'a> ParseContext<'a> {
 		assert_eq!(current_phase, Some(expected_phase));
 	}
 
+	pub fn pop_phase_unchecked(&mut self) -> Option<Phase> {
+		self.phases.pop()
+	}
+
 	pub fn push_token(&mut self, token: Token) {
 		self.tokens.push(token);
+	}
+
+	pub fn take_if(
+		&mut self,
+		cond: impl FnOnce(&Token) -> bool,
+	) -> Result<Option<Token>, ParseError> {
+		if !self.peek()?.map_or(false, cond) {
+			return Ok(None);
+		}
+
+		Ok(Some(self.next().unwrap().unwrap()))
+	}
+
+	pub fn peek(&mut self) -> Result<Option<&Token>, ParseError> {
+		if self.tokens.is_empty() {
+			if let Some(token) = Token::parse(self)? {
+				self.tokens.push(token);
+			}
+		}
+
+		Ok(self.tokens.last())
 	}
 
 	pub fn next(&mut self) -> Result<Option<Token>, ParseError> {

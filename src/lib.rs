@@ -15,3 +15,5 @@ macro_rules! if_windows {
 }
 
 pub mod parse;
+pub mod pathregex;
+pub use pathregex::{PathParseError, PathRegex};

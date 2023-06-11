@@ -1,8 +1,10 @@
-mod parse_context;
+mod ast;
+mod lex_context;
 mod stream;
-mod token;
+pub(crate) mod token; // tmp
 
-pub use parse_context::{ParseContext, Phase};
+pub use ast::Ast;
+pub use lex_context::{LexContext, Phase};
 pub use stream::Stream;
 pub use token::Token;
 
@@ -15,4 +17,9 @@ pub enum ParseError {
 	CliArgTooLarge,
 	InvalidDollarSign,
 	MissingEndingBrace,
+	InvalidCliPosition(isize),
+	MissingEnvVar(std::ffi::OsString),
+	BadPath(crate::PathParseError),
+	MissingEndQuote,
+	MissingEndRegex,
 }

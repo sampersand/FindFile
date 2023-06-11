@@ -1,4 +1,4 @@
-use crate::parse::{ParseContext, ParseError, Phase};
+use crate::parse::{LexContext, ParseError, Phase};
 use os_str_bytes::OsStringBytes;
 use std::ffi::OsString;
 use std::fmt::{self, Debug, Formatter};
@@ -163,12 +163,12 @@ fn append(vec: &mut Vec<u8>, chr: char) {
 	vec.push(u8::try_from(chr).expect("todo: actually translate it over"));
 }
 
-fn parse_escape(ctx: &mut ParseContext, is_path: bool) -> Result<char, ParseError> {
+fn parse_escape(lexctx: &mut LexContext, is_path: bool) -> Result<char, ParseError> {
 	fn parse_hex(byte: u8) -> Result<u32, ParseError> {
 		(byte as char).to_digit(16).ok_or(ParseError::BadEscape("not a hex digit"))
 	}
 
-	match ctx.stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? as char {
+	match lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? as char {
 		c @ ('\\' | '\"' | '\'' | '$' | '{') => Ok(c),
 		c @ ('*' | '[') if is_path => Ok(c),
 		'n' => Ok('\n'),
@@ -177,16 +177,20 @@ fn parse_escape(ctx: &mut ParseContext, is_path: bool) -> Result<char, ParseErro
 		'0' => Ok('\0'),
 		'x' => {
 			let upper =
-				parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
 			let lower =
-				parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
 			char::from_u32((upper << 4) | lower).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
 		}
 		'u' => {
-			let x1 = parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x2 = parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x3 = parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x4 = parse_hex(ctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x1 =
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x2 =
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x3 =
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x4 =
+				parse_hex(lexctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
 
 			char::from_u32((x1 << 12) | (x2 << 8) | (x3 << 4) | x4)
 				.ok_or(ParseError::BadEscape("invalid `\\u` escape"))
@@ -196,17 +200,17 @@ fn parse_escape(ctx: &mut ParseContext, is_path: bool) -> Result<char, ParseErro
 	}
 }
 
-fn parse_integer(ctx: &mut ParseContext, into: &mut String) -> bool {
-	if !ctx.stream.peek().map_or(false, |x| x.is_ascii_digit()) {
+fn parse_integer(lexctx: &mut LexContext, into: &mut String) -> bool {
+	if !lexctx.stream.peek().map_or(false, |x| x.is_ascii_digit()) {
 		return false;
 	}
 
-	while let Some(c) = ctx.stream.take() {
+	while let Some(c) = lexctx.stream.take() {
 		match c {
 			b'_' => continue,
 			_ if c.is_ascii_digit() => into.push(c as char),
 			_ => {
-				ctx.stream.untake();
+				lexctx.stream.untake();
 				break;
 			}
 		}
@@ -215,14 +219,14 @@ fn parse_integer(ctx: &mut ParseContext, into: &mut String) -> bool {
 	true
 }
 
-fn strip_whitespace_and_comments(ctx: &mut ParseContext) {
+fn strip_whitespace_and_comments(lexctx: &mut LexContext) {
 	loop {
-		if ctx.stream.take_while(|c| c.is_ascii_whitespace()).is_some() {
+		if lexctx.stream.take_while(|c| c.is_ascii_whitespace()).is_some() {
 			continue;
 		}
 
-		if ctx.stream.take_if_byte(b'#') {
-			let _ = ctx.stream.take_while(|c| c != b'\n');
+		if lexctx.stream.take_if_byte(b'#') {
+			let _ = lexctx.stream.take_while(|c| c != b'\n');
 			continue;
 		}
 
@@ -235,33 +239,33 @@ fn is_path_literal_character(c: char) -> bool {
 }
 
 impl Token {
-	fn parse_within_path(ctx: &mut ParseContext) -> Result<Self, ParseError> {
+	fn parse_within_path(lexctx: &mut LexContext) -> Result<Self, ParseError> {
 		let mut buf = Vec::new();
 
-		while let Some(c) = ctx.stream.take() {
+		while let Some(c) = lexctx.stream.take() {
 			match c {
 				// `$` escapes for cli values and env vars
 				b'$' => {
-					ctx.push_phase(Phase::DollarSignEscape);
+					lexctx.push_phase(Phase::DollarSignEscape);
 					break;
 				}
 
 				// `{` escapes are for interpolation
 				b'{' => {
-					ctx.push_phase(Phase::BraceEscape);
-					ctx.push_token(Token::BeginBraceEscape);
+					lexctx.push_phase(Phase::BraceEscape);
+					lexctx.push_token(Token::BeginBraceEscape);
 					break;
 				}
 
 				// `\` escapes are for special strings
-				b'\\' => append(&mut buf, parse_escape(ctx, true)?),
+				b'\\' => append(&mut buf, parse_escape(lexctx, true)?),
 
 				// Whitespace as well as `,();&|` indicate end of a path.
 				// In the future, I might expand what terminates a path
 				_ if b",();&|".contains(&c) || c.is_ascii_whitespace() => {
-					ctx.stream.untake();
-					ctx.pop_phase(Phase::WithinPath);
-					ctx.push_token(Token::EndPath);
+					lexctx.stream.untake();
+					lexctx.pop_phase(Phase::WithinPath);
+					lexctx.push_token(Token::EndPath);
 					break;
 				}
 
@@ -272,73 +276,73 @@ impl Token {
 		Ok(Self::Raw(buf))
 	}
 
-	fn parse_cli_arg(ctx: &mut ParseContext, braced: bool) -> Result<Self, ParseError> {
+	fn parse_cli_arg(lexctx: &mut LexContext, braced: bool) -> Result<Self, ParseError> {
 		let mut buf = String::new();
 
-		if ctx.stream.take_if_byte(b'-') {
+		if lexctx.stream.take_if_byte(b'-') {
 			buf.push('-');
 		} else {
-			let _ = ctx.stream.take_if_byte(b'+'); // ignore leading `+`
+			let _ = lexctx.stream.take_if_byte(b'+'); // ignore leading `+`
 		}
 
-		parse_integer(ctx, &mut buf);
-		if braced && !ctx.stream.take_if_byte(b'}') {
+		parse_integer(lexctx, &mut buf);
+		if braced && !lexctx.stream.take_if_byte(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
 
 		buf.parse::<isize>().map(Self::CliArg).or(Err(ParseError::CliArgTooLarge))
 	}
 
-	fn parse_env_var(ctx: &mut ParseContext, braced: bool) -> Result<Self, ParseError> {
-		let buf = ctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
+	fn parse_env_var(lexctx: &mut LexContext, braced: bool) -> Result<Self, ParseError> {
+		let buf = lexctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
 
-		if braced && !ctx.stream.take_if_byte(b'}') {
+		if braced && !lexctx.stream.take_if_byte(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
 
 		Ok(Self::EnvVar(OsString::assert_from_raw_vec(buf)))
 	}
 
-	fn parse_dollar_sign_escape(ctx: &mut ParseContext) -> Result<Self, ParseError> {
-		let result = Self::parse_dollar_sign(ctx)?;
-		ctx.pop_phase(Phase::DollarSignEscape);
+	fn parse_dollar_sign_escape(lexctx: &mut LexContext) -> Result<Self, ParseError> {
+		let result = Self::parse_dollar_sign(lexctx)?;
+		lexctx.pop_phase(Phase::DollarSignEscape);
 		Ok(result)
 	}
 
-	fn parse_dollar_sign(ctx: &mut ParseContext) -> Result<Self, ParseError> {
-		let braced = ctx.stream.take_if_byte(b'{');
+	fn parse_dollar_sign(lexctx: &mut LexContext) -> Result<Self, ParseError> {
+		let braced = lexctx.stream.take_if_byte(b'{');
 
-		match ctx.stream.peek().expect("called parse_dollar_sign at eof") {
-			x if x.is_ascii_digit() || x == b'-' || x == b'+' => Self::parse_cli_arg(ctx, braced),
-			x if x.is_ascii_alphabetic() || x == b'_' => Self::parse_env_var(ctx, braced),
+		match lexctx.stream.peek().expect("called parse_dollar_sign at eof") {
+			x if x.is_ascii_digit() || x == b'-' || x == b'+' => Self::parse_cli_arg(lexctx, braced),
+			x if x.is_ascii_alphabetic() || x == b'_' => Self::parse_env_var(lexctx, braced),
 			_ => Err(ParseError::InvalidDollarSign),
 		}
 	}
 
-	fn parse_within_string(ctx: &mut ParseContext) -> Result<Self, ParseError> {
+	fn parse_within_string(lexctx: &mut LexContext) -> Result<Self, ParseError> {
 		let mut buf = Vec::new();
-		while let Some(c) = ctx.stream.take() {
+		while let Some(c) = lexctx.stream.take() {
 			match c {
 				// `$` escapes for cli values and env vars
 				b'$' => {
-					ctx.push_phase(Phase::DollarSignEscape);
+					lexctx.push_phase(Phase::DollarSignEscape);
 					break;
 				}
 
 				// `{` escapes are for interpolation
 				b'{' => {
-					ctx.push_phase(Phase::BraceEscape);
-					ctx.push_token(Token::BeginBraceEscape);
+					lexctx.push_phase(Phase::BraceEscape);
+					lexctx.push_token(Token::BeginBraceEscape);
 					break;
 				}
 
 				// `\` is for normal escapes
-				b'\\' => append(&mut buf, parse_escape(ctx, false)?),
+				b'\\' => append(&mut buf, parse_escape(lexctx, false)?),
 
 				// `"` ends the string.
 				b'"' => {
-					ctx.pop_phase(Phase::WithinString);
-					ctx.push_token(Token::EndString);
+					lexctx.pop_phase(Phase::WithinString);
+					lexctx.push_token(Token::EndString);
 					break;
 				}
 
@@ -349,97 +353,107 @@ impl Token {
 		Ok(Self::Raw(buf))
 	}
 
-	pub fn parse(ctx: &mut ParseContext) -> Result<Option<Self>, ParseError> {
-		if ctx.stream.is_eof() {
-			return Ok(None);
+	pub fn parse(lexctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+		if lexctx.stream.is_eof() {
+			return match lexctx.pop_phase_unchecked() {
+				Some(Phase::WithinPath) => Ok(Some(Self::EndPath)),
+				Some(Phase::WithinString) => Err(ParseError::MissingEndQuote),
+				Some(Phase::WithinRegex) => Err(ParseError::MissingEndRegex),
+				None => Ok(None),
+				other => unimplemented!("todo: what are the conditions that this can happen?"),
+			};
 		}
 
-		match ctx.phase() {
-			Some(Phase::WithinPath) => Self::parse_within_path(ctx).map(Some),
-			Some(Phase::WithinString) => Self::parse_within_string(ctx).map(Some),
+		match lexctx.phase() {
+			Some(Phase::WithinPath) => Self::parse_within_path(lexctx).map(Some),
+			Some(Phase::WithinString) => Self::parse_within_string(lexctx).map(Some),
 			Some(Phase::WithinRegex) => todo!(),
-			Some(Phase::DollarSignEscape) => Self::parse_dollar_sign_escape(ctx).map(Some),
+			Some(Phase::DollarSignEscape) => Self::parse_dollar_sign_escape(lexctx).map(Some),
 
 			Some(Phase::BraceEscape) => {
-				match Self::parse_normal(ctx) {
+				match Self::parse_normal(lexctx) {
 					Ok(None) => Err(ParseError::MissingEndingBrace),
 					Ok(Some(Self::EndBraceEscape)) => {
-						ctx.pop_phase(Phase::BraceEscape);
-						debug_assert_ne!(ctx.phase(), None); // brace escape is only within another phase
+						lexctx.pop_phase(Phase::BraceEscape);
+						debug_assert_ne!(lexctx.phase(), None); // brace escape is only within another phase
 						Ok(Some(Token::EndBraceEscape))
 					}
 					other => other,
 				}
 			}
-			None => Self::parse_normal(ctx),
+			None => Self::parse_normal(lexctx),
 		}
 	}
 
-	fn parse_number(ctx: &mut ParseContext) -> Result<Self, ParseError> {
+	fn parse_number(lexctx: &mut LexContext) -> Result<Self, ParseError> {
 		todo!()
 	}
 
-	fn parse_path_prefix(ctx: &mut ParseContext) -> Result<Option<Self>, ParseError> {
-		if ctx.stream.take_if_starts_with(b"./") {
+	fn parse_path_prefix(lexctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+		if lexctx.stream.take_if_starts_with(b"./") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Pwd)));
 		}
 
-		if ctx.stream.take_if_starts_with(b"../") {
+		if lexctx.stream.take_if_starts_with(b"../") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Parent)));
 		}
 
-		if ctx.stream.take_if_starts_with(b"~/") {
+		if lexctx.stream.take_if_starts_with(b"~/") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Home)));
 		}
 
-		if ctx.stream.take_if_starts_with(b"?/") {
+		if lexctx.stream.take_if_starts_with(b"?/") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Anywhere)));
 		}
 
-		if ctx.stream.take_if_byte(b'/') {
-			if ctx.stream.peek() != Some(b'/') {
+		if lexctx.stream.take_if_byte(b'/') {
+			if lexctx.stream.peek() != Some(b'/') {
 				return Ok(Some(Self::BeginPath(BeginPathKind::Root)));
 			}
 
-			ctx.stream.untake(); // remove the `take_if_byte`
+			lexctx.stream.untake(); // remove the `take_if_byte`
 		}
 
 		Ok(None)
 	}
 
-	fn parse_normal(ctx: &mut ParseContext) -> Result<Option<Self>, ParseError> {
+	fn parse_normal(lexctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		// remove whitespace
-		strip_whitespace_and_comments(ctx);
+		strip_whitespace_and_comments(lexctx);
 
 		// check to see if it's a path literal prefix
-		if let Some(path) = Self::parse_path_prefix(ctx)? {
-			ctx.push_phase(Phase::WithinPath);
+		if let Some(path) = Self::parse_path_prefix(lexctx)? {
+			lexctx.push_phase(Phase::WithinPath);
 			return Ok(Some(path));
 		}
 
 		// Otherwise, do this
-		let Some(c) = ctx.stream.take() else { return Err(ParseError::Eof); };
+		let Some(c) = lexctx.stream.take() else { return Err(ParseError::Eof); };
 
 		macro_rules! ifeq {
 			($if_eq:ident, $if_not:ident) => {
-				Ok(Some(if ctx.stream.take_if_byte(b'=') { Self::$if_eq } else { Self::$if_not }))
+				Ok(Some(if lexctx.stream.take_if_byte(b'=') {
+					Self::$if_eq
+				} else {
+					Self::$if_not
+				}))
 			};
 		}
 
 		match c {
 			// Start of compound literals
 			b'"' => {
-				ctx.push_phase(Phase::WithinString);
+				lexctx.push_phase(Phase::WithinString);
 				Ok(Some(Self::BeginString))
 			}
-			b'$' if ctx.stream.take_if_byte(b'/') => {
-				ctx.push_phase(Phase::WithinRegex);
+			b'$' if lexctx.stream.take_if_byte(b'/') => {
+				lexctx.push_phase(Phase::WithinRegex);
 				Ok(Some(Self::BeginRegex))
 			}
 
 			// Block and delims
-			b'$' if ctx.stream.take_if_byte(b'{') => Ok(Some(Self::EndBlockStart)),
-			b'^' if ctx.stream.take_if_byte(b'{') => Ok(Some(Self::BeginBlockStart)),
+			b'$' if lexctx.stream.take_if_byte(b'{') => Ok(Some(Self::EndBlockStart)),
+			b'^' if lexctx.stream.take_if_byte(b'{') => Ok(Some(Self::BeginBlockStart)),
 			b'}' => Ok(Some(Self::EndBraceEscape)),
 			b'(' => Ok(Some(Self::LeftParen)),
 			b')' => Ok(Some(Self::RightParen)),
@@ -455,9 +469,9 @@ impl Token {
 			b'+' => ifeq!(AddAssign, Add),
 			b'-' => ifeq!(SubtractAssign, Subtract),
 			b'*' => ifeq!(MultiplyAssign, Multiply),
-			b'/' if ctx.stream.take_if_byte(b'/') => ifeq!(DivideAssign, Divide),
-			b'/' if ctx.stream.take_if_byte(b'=') => Ok(Some(Self::DivideAssign)),
-			b'/' if ctx.stream.peek().map_or(false, |c| c.is_ascii_whitespace()) => {
+			b'/' if lexctx.stream.take_if_byte(b'/') => ifeq!(DivideAssign, Divide),
+			b'/' if lexctx.stream.take_if_byte(b'=') => Ok(Some(Self::DivideAssign)),
+			b'/' if lexctx.stream.peek().map_or(false, |c| c.is_ascii_whitespace()) => {
 				Ok(Some(Self::Divide))
 			}
 			b'%' => ifeq!(ModuloAssign, Modulo),
@@ -468,12 +482,12 @@ impl Token {
 			b'<' => ifeq!(LessThanOrEqual, LessThan),
 			b'>' => ifeq!(GreaterThanOrEqual, GreaterThan),
 
-			b'$' => Self::parse_dollar_sign(ctx).map(Some),
+			b'$' => Self::parse_dollar_sign(lexctx).map(Some),
 			x if x.is_ascii_alphabetic() || c == b'_' => {
-				let buf = ctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
+				let buf = lexctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
 				Ok(Some(Self::Variable(OsString::assert_from_raw_vec(buf))))
 			}
-			x if x.is_ascii_digit() => Self::parse_number(ctx).map(Some),
+			x if x.is_ascii_digit() => Self::parse_number(lexctx).map(Some),
 
 			// misc
 			_ => Err(ParseError::UnknownTokenStart(c as char)),
