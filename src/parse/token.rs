@@ -82,8 +82,8 @@ fn parse_escape(ctx: &mut ParseContext, is_path: bool) -> Result<char, ParseErro
 	}
 
 	match ctx.stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? as char {
-		c @ ('\\' | '\"' | '\'') => Ok(c),
-		c @ ('*' | '{' | '$' | '[') if is_path => Ok(c),
+		c @ ('\\' | '\"' | '\'' | '$' | '{') => Ok(c),
+		c @ ('*' | '[') if is_path => Ok(c),
 		'n' => Ok('\n'),
 		't' => Ok('\t'),
 		'r' => Ok('\r'),
@@ -162,6 +162,7 @@ impl Token {
 				// `{` escapes are for interpolation
 				b'{' => {
 					ctx.push_phase(Phase::BraceEscape);
+					ctx.push_token(Token::BeginBraceEscape);
 					break;
 				}
 
@@ -237,6 +238,7 @@ impl Token {
 				// `{` escapes are for interpolation
 				b'{' => {
 					ctx.push_phase(Phase::BraceEscape);
+					ctx.push_token(Token::BeginBraceEscape);
 					break;
 				}
 
