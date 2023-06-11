@@ -1,8 +1,17 @@
-// pub mod parser;
-mod filesize;
+#![allow(unused)]
 
-mod posix;
-pub mod token;
+#[cfg(windows)]
+macro_rules! if_windows {
+	($windows:expr, $_unix:expr) => {
+		$windows
+	};
+}
 
-pub use filesize::FileSize;
-pub use posix::PosixRegex;
+#[cfg(not(windows))]
+macro_rules! if_windows {
+	($_windows:expr, $unix:expr) => {
+		$unix
+	};
+}
+
+pub mod parse;

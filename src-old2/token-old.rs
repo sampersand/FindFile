@@ -1,12 +1,15 @@
 use crate::filesize::FileSize;
-use crate::posix::PosixRegex;
+use crate::pcre::{PcreRegex, PcreRegexParseError};
+use crate::posix::{PosixRegex, PosixRegexParseError};
 use logos::Logos;
 use std::ffi::OsStr;
+use std::path::PathBuf;
 
 #[derive(Debug, PartialEq, Clone, Default)]
 pub enum LexingError {
 	NumberParseError,
-
+	PosixRegexParseError(PosixRegexParseError),
+	PcreRegexParseError(PcreRegexParseError),
 	#[default]
 	Other,
 }
@@ -14,6 +17,17 @@ pub enum LexingError {
 impl From<std::num::ParseIntError> for LexingError {
 	fn from(_: std::num::ParseIntError) -> Self {
 		LexingError::NumberParseError
+	}
+}
+impl From<PosixRegexParseError> for LexingError {
+	fn from(err: PosixRegexParseError) -> Self {
+		Self::PosixRegexParseError(err)
+	}
+}
+
+impl From<PcreRegexParseError> for LexingError {
+	fn from(err: PcreRegexParseError) -> Self {
+		Self::PcreRegexParseError(err)
 	}
 }
 
@@ -48,7 +62,7 @@ pub enum Token<'a> {
 	#[token("+")] Add,
 	#[token("-")] Sub,
 	#[token("*")] Mul,
-	#[token("/")] Div,
+	#[token("//")] Div,
 	#[token("^")] Pow,
 
 	#[token("!")]   Not,
@@ -72,6 +86,10 @@ pub enum Token<'a> {
 	#[regex(r"(?i)(?&digits)[kmgtpe]i?b?", |lex| lex.slice().parse::<FileSize>().expect("it should always work"))]
 	FileSize(FileSize),
 
+	// TODO: strip `\`s from path
+	#[regex(r"([.~]?/)([^ ]|\\.)*", |lex| PathBuf::from(lex.slice()))]
+	Path(PathBuf),
+
 	// #[regex(r"(?i)(?&digits)[kmgtpe]i?b?", |lex| lex.slice().parse::<FileSize>().expect("it should always work"))]
 	// DateTime(FileSize),
 
@@ -81,32 +99,9 @@ pub enum Token<'a> {
 	#[regex(r#""(\\.|[^"])*""#, |lex| lex.slice())]
 	String(&'a str),
 
-	#[regex(r"/(\\.|[^/])*/", |lex| lex.slice())]
-	PerlRegex(&'a str),
+	#[regex(r"\$/(\\.|[^/])*/", |lex| lex.slice().parse())]
+	PerlRegex(PcreRegex),
 
 	#[regex(r"x/(\\.|[^/])*/", |lex| lex.slice().parse())]
 	PosixRegex(PosixRegex)
 }
-
-// #[derive(Logos, Debug, PartialEq)]
-// #[logos(skip r"[ \t\n\f]+")]
-// #[logos(subpattern digits = r"[0-9][0-9_]*")]
-// pub enum Token<'a> {
-// 	#[]
-// 	CommandLineArg(isize),
-// 	EnvironmentVariable(&'a OsStr),
-// }
-
-// #[logos(skip r"[ \t\n\f]+")] // Ignore this regex pattern between tokens
-// enum Token {
-// 	// Tokens can be literal strings, of any length.
-// 	#[token("fast")]
-// 	Fast,
-
-// 	#[token(".")]
-// 	Period,
-
-// 	// Or regular expressions.
-// 	#[regex("[a-zA-Z]+")]
-// 	Text,
-// }
