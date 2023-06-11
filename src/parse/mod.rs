@@ -1,9 +1,12 @@
 mod ast;
+mod ast_context;
 mod lex_context;
 mod stream;
 pub(crate) mod token; // tmp
 
 pub use ast::Ast;
+
+pub use ast_context::AstContext;
 pub use lex_context::{LexContext, Phase};
 pub use stream::Stream;
 pub use token::Token;
