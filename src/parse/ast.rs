@@ -126,7 +126,7 @@ impl Atom {
 impl Ast {
 	pub fn parse(lexctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		let Some(start) = lexctx.next()? else {
-			return Ok(None) ;
+			return Ok(None);
 		};
 
 		match start {

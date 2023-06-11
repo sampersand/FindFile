@@ -34,6 +34,7 @@ pub enum Token {
 	CliArg(isize),
 	EnvVar(OsString),
 	Variable(OsString),
+	Number(f64),
 
 	// Begin / end pairs
 	BeginPath(BeginPathKind),
@@ -99,6 +100,7 @@ impl Debug for Token {
 					write!(f, "Token::Raw({raw:?}")
 				}
 			}
+			Self::Number(num) => write!(f, "Token::Number({num})"),
 			Self::CliArg(idx) => write!(f, "Token::CliArg({idx})"),
 			Self::EnvVar(var) => {
 				if let Some(s) = var.to_str() {
@@ -183,14 +185,10 @@ fn parse_escape(lctx: &mut LexContext, is_path: bool) -> Result<char, ParseError
 			char::from_u32((upper << 4) | lower).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
 		}
 		'u' => {
-			let x1 =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x2 =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x3 =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x4 =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x1 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x2 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x3 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+			let x4 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
 
 			char::from_u32((x1 << 12) | (x2 << 8) | (x3 << 4) | x4)
 				.ok_or(ParseError::BadEscape("invalid `\\u` escape"))
@@ -200,7 +198,7 @@ fn parse_escape(lctx: &mut LexContext, is_path: bool) -> Result<char, ParseError
 	}
 }
 
-fn parse_integer(lctx: &mut LexContext, into: &mut String) -> bool {
+fn parse_digits(lctx: &mut LexContext, into: &mut String) -> bool {
 	if !lctx.stream.peek().map_or(false, |x| x.is_ascii_digit()) {
 		return false;
 	}
@@ -219,10 +217,73 @@ fn parse_integer(lctx: &mut LexContext, into: &mut String) -> bool {
 	true
 }
 
+fn parse_base_integer(lctx: &mut LexContext) -> Option<u64> {
+	if !lctx.stream.take_if_byte(b'0') {
+		return None;
+	}
+
+	let Some(basechr) = lctx.stream.take() else {
+		lctx.stream.untake();
+		return None;
+	};
+
+	let radix = match basechr {
+		b'x' | b'X' => 16,
+		b'o' | b'O' => 8,
+		b'b' | b'B' => 2,
+		_ => {
+			lctx.stream.untake();
+			lctx.stream.untake();
+			return None;
+		}
+	};
+
+	let mut buf = String::new();
+	while let Some(c) = lctx.stream.take() {
+		if (c as char).to_digit(radix).is_none() {
+			break;
+		}
+
+		buf.push(c as char);
+	}
+
+	u64::from_str_radix(&buf, radix).ok()
+}
+
 fn parse_float(lctx: &mut LexContext) -> Result<f64, ParseError> {
 	let mut buf = String::new();
 
-	if lctx
+	if lctx.stream.take_if_byte(b'-') {
+		buf.push('-');
+	} else {
+		let _ = lctx.stream.take_if_byte(b'+'); // omit leading `+`
+	}
+
+	if !parse_digits(lctx, &mut buf) {
+		return Err(ParseError::BadFloat);
+	}
+
+	if lctx.stream.take_if_byte(b'.') {
+		buf.push('.');
+		if !parse_digits(lctx, &mut buf) {
+			return Err(ParseError::BadFloat);
+		}
+	}
+
+	if lctx.stream.take_if_byte(b'e') || lctx.stream.take_if_byte(b'E') {
+		buf.push('e');
+		if lctx.stream.take_if_byte(b'-') {
+			buf.push('-');
+		} else {
+			let _ = lctx.stream.take_if_byte(b'+');
+		}
+
+		if !parse_digits(lctx, &mut buf) {
+			return Err(ParseError::BadFloat);
+		}
+	}
+
+	buf.parse().or(Err(ParseError::BadFloat))
 }
 
 fn strip_whitespace_and_comments(lctx: &mut LexContext) {
@@ -291,7 +352,7 @@ impl Token {
 			let _ = lctx.stream.take_if_byte(b'+'); // ignore leading `+`
 		}
 
-		parse_integer(lctx, &mut buf);
+		parse_digits(lctx, &mut buf);
 		if braced && !lctx.stream.take_if_byte(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
@@ -392,9 +453,19 @@ impl Token {
 	}
 
 	fn parse_number(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let num = parse_float(lctx)?;
+		let num = if let Some(integer) = parse_base_integer(lctx) {
+			integer as f64
+		} else {
+			parse_float(lctx)?
+		};
 
-		todo!()
+		let Some(suffix) = lctx.stream.take_while(|c| c.is_ascii_alphabetic()) else {
+			return Ok(Self::Number(num));
+		};
+
+		match suffix.as_slice() {
+			_ => todo!(),
+		}
 	}
 
 	fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
@@ -440,11 +511,7 @@ impl Token {
 
 		macro_rules! ifeq {
 			($if_eq:ident, $if_not:ident) => {
-				Ok(Some(if lctx.stream.take_if_byte(b'=') {
-					Self::$if_eq
-				} else {
-					Self::$if_not
-				}))
+				Ok(Some(if lctx.stream.take_if_byte(b'=') { Self::$if_eq } else { Self::$if_not }))
 			};
 		}
 

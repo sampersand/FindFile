@@ -19,6 +19,7 @@ pub enum ParseError {
 	InvalidEscape(char),
 	CliArgTooLarge,
 	InvalidDollarSign,
+	BadFloat,
 	MissingEndingBrace,
 	InvalidCliPosition(isize),
 	MissingEnvVar(std::ffi::OsString),
