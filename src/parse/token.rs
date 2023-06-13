@@ -35,6 +35,8 @@ pub enum Token {
 	EnvVar(OsString),
 	Variable(OsString),
 	Number(f64),
+	DateTime(crate::DateTime),
+	FileSize(crate::FileSize),
 
 	// Begin / end pairs
 	BeginPath(BeginPathKind),
@@ -53,12 +55,13 @@ pub enum Token {
 	RightParen,      // `)`
 
 	// control characters
-	Question, // `?`
-	Colon,    // `:`
-	Comma,    // `,`
-	And,      // `&`
-	Or,       // `|`
-	Equal,    // `=`
+	Question,  // `?`
+	Colon,     // `:`
+	Comma,     // `,`
+	Semicolon, // `;`
+	And,       // `&&`
+	Or,        // `||`
+	Equal,     // `=`
 
 	// Math
 	Add,            // `+`
@@ -109,6 +112,8 @@ impl Debug for Token {
 					write!(f, "Token::EnvVar({var:?}")
 				}
 			}
+			Self::FileSize(fs) => write!(f, "Token::FileSize({fs:?})"),
+			Self::DateTime(dt) => write!(f, "Token::DateTime({dt:?})"),
 			Self::Variable(var) => {
 				if let Some(s) = var.to_str() {
 					write!(f, "Token::Variable({s:?})")
@@ -127,6 +132,7 @@ impl Debug for Token {
 			Self::Question => write!(f, "Token(?)"),
 			Self::Colon => write!(f, "Token(:)"),
 			Self::Comma => write!(f, "Token(,)"),
+			Self::Semicolon => write!(f, "Token(;)"),
 			Self::And => write!(f, "Token(&)"),
 			Self::Or => write!(f, "Token(|)"),
 			Self::Equal => write!(f, "Token(=)"),
@@ -537,6 +543,7 @@ impl Token {
 			b'?' => Ok(Some(Self::Question)), // TODO: this can conflict with `?/`
 			b':' => Ok(Some(Self::Colon)),
 			b',' => Ok(Some(Self::Comma)),
+			b';' => Ok(Some(Self::Semicolon)),
 			b'&' => Ok(Some(Self::And)),
 			b'|' => Ok(Some(Self::Or)),
 

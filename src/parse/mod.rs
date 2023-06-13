@@ -25,5 +25,11 @@ pub enum ParseError {
 	MissingEnvVar(std::ffi::OsString),
 	BadPath(crate::PathParseError),
 	MissingEndQuote,
+	NotAndEndOfExpression,
 	MissingEndRegex,
+	NoClosingRightParen,
+	MissingRhsToAssignment,
+	MissingRhsToMathOp,
+	MissingRhsToLogicOp,
+	AssignToNonVariable,
 }

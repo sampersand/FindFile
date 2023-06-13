@@ -55,7 +55,7 @@ impl<'a> LexContext<'a> {
 		self.tokens.push(token);
 	}
 
-	pub fn take_if(
+	pub fn take_if_fn(
 		&mut self,
 		cond: impl FnOnce(&Token) -> bool,
 	) -> Result<Option<Token>, ParseError> {
@@ -74,6 +74,15 @@ impl<'a> LexContext<'a> {
 		}
 
 		Ok(self.tokens.last())
+	}
+
+	pub fn take_if(&mut self, token: Token) -> Result<bool, ParseError> {
+		if self.peek()? == Some(&token) {
+			let _ = self.next()?;
+			Ok(true)
+		} else {
+			Ok(false)
+		}
 	}
 
 	pub fn next(&mut self) -> Result<Option<Token>, ParseError> {
