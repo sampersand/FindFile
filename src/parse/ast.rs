@@ -70,8 +70,8 @@ impl LogicOperator {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
 	Atom(Atom),
-	Math(Box<Self>, MathOperator, Box<Self>),
-	Logic(Box<Self>, LogicOperator, Box<Self>),
+	Math(MathOperator, Box<Self>, Box<Self>),
+	Logic(LogicOperator, Box<Self>, Box<Self>),
 	Assignment(OsString, Option<MathOperator>, Box<Self>),
 	And(Box<Self>, Box<Self>),
 	Or(Box<Self>, Box<Self>),
@@ -115,7 +115,7 @@ impl Expression {
 			};
 
 			if !assign {
-				return Ok(Some(Self::Math(Self::Atom(begin).into(), math, rhs.into())));
+				return Ok(Some(Self::Math(math, Self::Atom(begin).into(), rhs.into())));
 			}
 
 			let Atom::Variable(var) = begin else {
@@ -130,7 +130,7 @@ impl Expression {
 				return Err(ParseError::MissingRhsToLogicOp);
 			};
 
-			return Ok(Some(Self::Logic(Self::Atom(begin).into(), logic, rhs.into())));
+			return Ok(Some(Self::Logic(logic, Self::Atom(begin).into(), rhs.into())));
 		}
 
 		if next == Token::And || next == Token::Comma && comma_is_and {
@@ -314,6 +314,10 @@ impl Atom {
 			Some(Token::Number(num)) => Ok(Some(Self::Number(num))),
 			Some(Token::FileSize(num)) => Ok(Some(Self::FileSize(num))),
 			Some(Token::DateTime(num)) => Ok(Some(Self::DateTime(num))),
+			Some(other) => {
+				lctx.push_token(other);
+				Ok(None)
+			}
 			_ => Ok(None),
 		}
 	}

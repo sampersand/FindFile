@@ -1,21 +1,20 @@
 #![allow(unused)]
-use findfile::parse::Ast;
 use findfile::parse::LexContext;
+use findfile::parse::{ast::Expression, Ast};
 use findfile::PathRegex;
 
 fn main() {
-	let regex = PathRegex::new("foo/*/*.txt").unwrap();
-	dbg!(regex);
+	let mut lctx = LexContext::new("1 * 2 + 3");
+	let mut lctx = LexContext::new("a()");
+	// let mut lctx = LexContext::new("foo, bar(), a += (b; c)(!3, 4 > 5)");
+
+	dbg!(Expression::parse(&mut lctx, true));
+
+	// let regex = PathRegex::new("foo/*/*.txt").unwrap();
+	// dbg!(regex);
 	// dbg!(reg.matches("foo/bar/baz.txt"));
 }
 
-// 	let mut lctx = LexContext::new(
-// 		r#"
-// size > $3
-
-// "#
-// 		.as_ref(),
-// 	);
 // 	// let mut lctx = LexContext::new(r#""./a{"A"}$+1X", $2"#.as_ref());
 // 	dbg!(Ast::parse(&mut lctx));
 // 	// let mut lctx = LexContext::new(r"./a${foo}bc,d".as_ref());

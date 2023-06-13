@@ -566,10 +566,14 @@ impl Token {
 
 			b'$' => Self::parse_dollar_sign(lctx).map(Some),
 			x if x.is_ascii_alphabetic() || c == b'_' => {
+				lctx.stream.untake();
 				let buf = lctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
 				Ok(Some(Self::Variable(OsString::assert_from_raw_vec(buf))))
 			}
-			x if x.is_ascii_digit() => Self::parse_number(lctx).map(Some),
+			x if x.is_ascii_digit() => {
+				lctx.stream.untake();
+				Self::parse_number(lctx).map(Some)
+			}
 
 			// misc
 			_ => Err(ParseError::UnknownTokenStart(c as char)),

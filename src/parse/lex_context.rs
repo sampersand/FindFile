@@ -18,9 +18,9 @@ pub struct LexContext<'a> {
 }
 
 impl<'a> LexContext<'a> {
-	pub fn new(source: &'a OsStr) -> Self {
+	pub fn new<T: AsRef<OsStr> + ?Sized + 'a>(source: &'a T) -> Self {
 		Self {
-			stream: Stream::new(source),
+			stream: Stream::new(source.as_ref()),
 			phases: Vec::with_capacity(2), // sensible defaults
 			tokens: Vec::with_capacity(2),
 		}

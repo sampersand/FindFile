@@ -1,4 +1,4 @@
-mod ast;
+pub mod ast;
 mod ast_context;
 mod lex_context;
 mod stream;
