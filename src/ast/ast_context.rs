@@ -1,4 +1,4 @@
-use crate::parse::ast::{Block, Expression};
+use crate::ast::{Block, Expression};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AstContext {

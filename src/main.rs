@@ -1,6 +1,6 @@
 #![allow(unused)]
+use findfile::ast::Expression;
 use findfile::parse::LexContext;
-use findfile::parse::{ast::Expression, Ast};
 use findfile::PathRegex;
 
 fn main() {
