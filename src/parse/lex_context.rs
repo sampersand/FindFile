@@ -1,5 +1,6 @@
 use crate::parse::{ParseError, Stream, Token};
-use std::ffi::OsStr;
+use std::collections::HashMap;
+use std::ffi::{OsStr, OsString};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -15,6 +16,7 @@ pub struct LexContext<'a> {
 	pub(super) stream: Stream<'a>,
 	phases: Vec<Phase>,
 	tokens: Vec<Token>,
+	env: HashMap<OsString, Option<OsString>>,
 }
 
 impl<'a> LexContext<'a> {
@@ -23,6 +25,7 @@ impl<'a> LexContext<'a> {
 			stream: Stream::new(source.as_ref()),
 			phases: Vec::with_capacity(2), // sensible defaults
 			tokens: Vec::with_capacity(2),
+			env: Default::default(),
 		}
 	}
 
@@ -30,8 +33,14 @@ impl<'a> LexContext<'a> {
 		todo!()
 	}
 
-	pub fn get_env(&self, pos: &OsStr) -> Option<&OsStr> {
-		todo!()
+	pub fn get_env<'b>(&'b mut self, name: &OsStr) -> Option<&'b OsStr> {
+		let mut env = &mut self.env;
+
+		if !env.contains_key(name) {
+			env.insert(name.to_owned(), std::env::var_os(name));
+		}
+
+		env[name].as_deref()
 	}
 
 	pub fn phase(&self) -> Option<Phase> {

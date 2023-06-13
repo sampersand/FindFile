@@ -29,7 +29,7 @@ pub enum ParseError {
 	MissingEndRegex,
 	NoClosingRightParen,
 	MissingRhsToAssignment,
-	MissingRhsToMathOp,
+	MissingRhsToOp,
 	MissingRhsToLogicOp,
 	AssignToNonVariable,
 }

@@ -61,7 +61,7 @@ pub enum Token {
 	Semicolon, // `;`
 	And,       // `&&`
 	Or,        // `||`
-	Equal,     // `=`
+	Assign,    // `=`
 
 	// Math
 	Add,            // `+`
@@ -78,7 +78,7 @@ pub enum Token {
 	// logic
 	NotEqual,           // `!=`
 	Not,                // `!`
-	Assign,             // `==`
+	Equal,              // `==`
 	LessThanOrEqual,    // `<=`
 	LessThan,           // `<`
 	GreaterThanOrEqual, // `>=`
@@ -135,7 +135,7 @@ impl Debug for Token {
 			Self::Semicolon => write!(f, "Token(;)"),
 			Self::And => write!(f, "Token(&)"),
 			Self::Or => write!(f, "Token(|)"),
-			Self::Equal => write!(f, "Token(=)"),
+			Self::Assign => write!(f, "Token(=)"),
 
 			// Math
 			Self::Add => write!(f, "Token(+)"),
@@ -152,7 +152,7 @@ impl Debug for Token {
 			// logic
 			Self::NotEqual => write!(f, "Token(!=)"),
 			Self::Not => write!(f, "Token(!)"),
-			Self::Assign => write!(f, "Token(==)"),
+			Self::Equal => write!(f, "Token(==)"),
 			Self::LessThanOrEqual => write!(f, "Token(<=)"),
 			Self::LessThan => write!(f, "Token(<)"),
 			Self::GreaterThanOrEqual => write!(f, "Token(>=)"),
