@@ -1,5 +1,6 @@
 use crate::ast::{Atom, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
+use crate::play::{PlayContext, PlayResult};
 use std::ffi::OsString;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -10,6 +11,17 @@ pub enum Expression {
 	Assignment(OsString, Option<MathOperator>, Box<Self>),
 	And(Box<Self>, Box<Self>),
 	Or(Box<Self>, Box<Self>),
+}
+
+impl Expression {
+	pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
+		match self {
+			Self::Atom(atom) => atom.matches(ctx),
+			Self::And(lhs, rhs) => Ok(lhs.matches(ctx)? && rhs.matches(ctx)?),
+			Self::Or(lhs, rhs) => Ok(lhs.matches(ctx)? || rhs.matches(ctx)?),
+			_ => todo!(),
+		}
+	}
 }
 
 impl Expression {

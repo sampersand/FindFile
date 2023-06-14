@@ -1,14 +1,20 @@
 #![allow(unused)]
 use findfile::ast::Expression;
 use findfile::parse::LexContext;
+use findfile::play::Program;
 use findfile::PathRegex;
 
 fn main() {
-	let mut lctx = LexContext::new("\"${PATH}\" 2 * 3 + 4");
-	// let mut lctx = LexContext::new("1 * 2 + 3");
-	// let mut lctx = LexContext::new("foo, bar(), a += (b; c)(!3, 4 > 5)");
+	// let mut lctx = LexContext::new("\"${PATH}\" 2 * 3 + 4");
+	let mut args = std::env::args();
+	let matchstr = args.skip(1).next().unwrap();
 
-	dbg!(Expression::parse(&mut lctx, true, Default::default()));
+	let mut lctx = LexContext::new(&matchstr);
+	let expr = Expression::parse(&mut lctx, true, Default::default()).unwrap().unwrap();
+
+	let program = Program::new(vec![expr]);
+
+	program.play(".").unwrap();
 
 	// let regex = PathRegex::new("foo/*/*.txt").unwrap();
 	// dbg!(regex);

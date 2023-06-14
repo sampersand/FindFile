@@ -1,5 +1,6 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
+use crate::play::{PlayContext, PlayResult};
 use crate::{DateTime, FileSize, PathRegex};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::{OsStr, OsString};
@@ -133,3 +134,43 @@ impl Atom {
 		}
 	}
 }
+
+fn slice_contains<T: PartialEq>(haystack: &[T], needle: &[T]) -> bool {
+	haystack.windows(needle.len()).any(|c| c == needle)
+}
+
+impl Atom {
+	pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
+		match self {
+			Self::String(s) => {
+				Ok(ctx.is_file()? && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes()))
+			}
+			// Self::String(s) => Ok(ctx.is_file()?
+			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
+			// Self::
+			other => todo!("{other:?}"),
+		}
+	}
+}
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum Atom {
+// 	Not(Box<Self>),
+// 	Negate(Box<Self>),
+// 	Block(Block),
+
+// 	InterpolatedPath(crate::parse::token::BeginPathKind, Interpolated),
+// 	Path(PathRegex),
+
+// 	InterpolatedString(Interpolated),
+// 	String(OsString),
+
+// 	InterpolatedRegex(Interpolated, RegexFlags),
+// 	Regex(OsString, RegexFlags), // todo: actual regex
+
+// 	Variable(OsString),
+// 	Number(f64),
+// 	DateTime(DateTime),
+// 	FileSize(FileSize),
+
+// 	FnCall(Box<Self>, Vec<Expression>), // note that only variables and blocks are the first arg.
+// }
