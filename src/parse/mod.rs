@@ -9,6 +9,7 @@ pub use token::Token;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
 	Eof,
+	VariableIsntUtf8,
 	UnknownTokenStart(char),
 	BadEscape(&'static str),
 	InvalidEscape(char),

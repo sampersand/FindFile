@@ -1,5 +1,9 @@
 use crate::ast::{Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
+use crate::play::PlayContext;
+use crate::play::PlayResult;
+use crate::play::RunContext;
+use crate::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block(Vec<Expression>);
@@ -20,5 +24,15 @@ impl Block {
 		}
 
 		Ok(Self(args))
+	}
+
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
+		let mut last = None;
+
+		for expr in &self.0 {
+			last = Some(expr.run(ctx, rctx)?);
+		}
+
+		Ok(last.unwrap_or_default())
 	}
 }

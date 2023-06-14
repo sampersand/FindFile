@@ -31,8 +31,8 @@ impl Precedence {
 			| Token::GreaterThan
 			| Token::GreaterThanOrEqual => Some(Self::Logic),
 
-			Token::And | Token::Or => Some(Self::Logic),
-			Token::Comma if comma_is_and => Some(Self::Logic),
+			Token::And | Token::Or => Some(Self::ShortCircuit),
+			Token::Comma if comma_is_and => Some(Self::ShortCircuit),
 			_ => None,
 		}
 	}

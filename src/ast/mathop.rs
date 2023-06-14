@@ -1,5 +1,7 @@
 use crate::ast::Precedence;
 use crate::parse::Token;
+use crate::play::PlayResult;
+use crate::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MathOperator {
@@ -14,6 +16,16 @@ impl MathOperator {
 		match self {
 			Self::Add | Self::Subtract => Precedence::AddSub,
 			Self::Multiply | Self::Divide | Self::Modulo => Precedence::MulDivMod,
+		}
+	}
+
+	pub fn run(self, lhs: &Value, rhs: &Value) -> PlayResult<Value> {
+		match self {
+			Self::Add => lhs.add(rhs),
+			Self::Subtract => lhs.subtract(rhs),
+			Self::Multiply => lhs.multiply(rhs),
+			Self::Divide => lhs.divide(rhs),
+			Self::Modulo => lhs.modulo(rhs),
 		}
 	}
 

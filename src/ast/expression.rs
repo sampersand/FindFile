@@ -1,27 +1,16 @@
 use crate::ast::{Atom, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult};
-use std::ffi::OsString;
+use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
 	Atom(Atom),
 	Math(MathOperator, Box<Self>, Box<Self>),
 	Logic(LogicOperator, Box<Self>, Box<Self>),
-	Assignment(OsString, Option<MathOperator>, Box<Self>),
+	Assignment(String, Option<MathOperator>, Box<Self>),
 	And(Box<Self>, Box<Self>),
 	Or(Box<Self>, Box<Self>),
-}
-
-impl Expression {
-	pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
-		match self {
-			Self::Atom(atom) => atom.matches(ctx),
-			Self::And(lhs, rhs) => Ok(lhs.matches(ctx)? && rhs.matches(ctx)?),
-			Self::Or(lhs, rhs) => Ok(lhs.matches(ctx)? || rhs.matches(ctx)?),
-			_ => todo!(),
-		}
-	}
 }
 
 impl Expression {
@@ -94,4 +83,64 @@ impl Expression {
 	pub fn parse_until(lctx: &mut LexContext, until: Token) -> Result<Self, ParseError> {
 		todo!();
 	}
+}
+
+// #[derive(Debug, Clone, PartialEq)]
+// pub enum Expression {
+// 	Atom(Atom),
+// 	Math(MathOperator, Box<Self>, Box<Self>),
+// 	Logic(LogicOperator, Box<Self>, Box<Self>),
+// 	Assignment(String, Option<MathOperator>, Box<Self>),
+// 	And(Box<Self>, Box<Self>),
+// 	Or(Box<Self>, Box<Self>),
+// }
+
+impl Expression {
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
+		match self {
+			Self::Atom(atom) => atom.run(ctx, rctx),
+			Self::Math(op, lhs, rhs) => {
+				op.run(&lhs.run(ctx, RunContext::Any)?, &rhs.run(ctx, RunContext::Any)?)
+			}
+			Self::Logic(op, lhs, rhs) => op
+				.run(&lhs.run(ctx, RunContext::Logical)?, &rhs.run(ctx, RunContext::Logical)?)
+				.map(Value::from),
+			Self::Assignment(name, op, rhs) => {
+				let value = if let Some(op) = op {
+					let old = ctx.lookup_var(name);
+					op.run(&old, &rhs.run(ctx, RunContext::Any)?)?
+				} else {
+					rhs.run(ctx, RunContext::Any)?
+				};
+
+				ctx.assign_var(name, value.clone());
+				Ok(value)
+			}
+			Self::And(lhs, rhs) => {
+				let lhs = lhs.run(ctx, RunContext::Logical)?;
+				if lhs.is_truthy() {
+					rhs.run(ctx, RunContext::Logical)
+				} else {
+					Ok(lhs)
+				}
+			}
+			Self::Or(lhs, rhs) => {
+				let lhs = lhs.run(ctx, RunContext::Logical)?;
+				if lhs.is_truthy() {
+					Ok(lhs)
+				} else {
+					rhs.run(ctx, RunContext::Logical)
+				}
+			}
+		}
+	}
+
+	// pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
+	// 	match self {
+	// 		Self::Atom(atom) => atom.matches(ctx, lctx),
+	// 		Self::And(lhs, rhs) => Ok(lhs.matches(ctx, lctx)? && rhs.matches(ctx, lctx)?),
+	// 		Self::Or(lhs, rhs) => Ok(lhs.matches(ctx, lctx)? || rhs.matches(ctx, lctx)?),
+	// 		_ => todo!(),
+	// 	}
+	// }
 }

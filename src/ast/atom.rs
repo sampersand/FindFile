@@ -1,7 +1,7 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult};
-use crate::{DateTime, FileSize, PathRegex};
+use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::{DateTime, FileSize, PathRegex, Value};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::{OsStr, OsString};
 
@@ -13,6 +13,7 @@ pub enum Atom {
 	Not(Box<Self>),
 	Negate(Box<Self>),
 	Block(Block),
+	ForcedLogical(Box<Self>),
 
 	InterpolatedPath(crate::parse::token::BeginPathKind, Interpolated),
 	Path(PathRegex),
@@ -23,7 +24,7 @@ pub enum Atom {
 	InterpolatedRegex(Interpolated, RegexFlags),
 	Regex(OsString, RegexFlags), // todo: actual regex
 
-	Variable(OsString),
+	Variable(String),
 	Number(f64),
 	DateTime(DateTime),
 	FileSize(FileSize),
@@ -97,6 +98,10 @@ impl Atom {
 			Some(Token::BeginString) => Ok(Some(Self::parse_string(lctx)?)),
 			Some(Token::BeginRegex) => Ok(Some(Self::parse_regex(lctx)?)),
 
+			Some(Token::Question) => Ok(Some(Self::ForcedLogical(Box::new(
+				Self::parse(lctx)?.ok_or(ParseError::NotAndEndOfExpression)?,
+			)))),
+
 			Some(Token::Not) => Ok(Some(Self::Not(Box::new(
 				Self::parse(lctx)?.ok_or(ParseError::NotAndEndOfExpression)?,
 			)))),
@@ -135,16 +140,34 @@ impl Atom {
 	}
 }
 
-fn slice_contains<T: PartialEq>(haystack: &[T], needle: &[T]) -> bool {
+fn slice_contains(haystack: &[u8], needle: &[u8]) -> bool {
 	haystack.windows(needle.len()).any(|c| c == needle)
 }
 
 impl Atom {
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
+		match (self, rctx) {
+			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContext::Logical),
+			(Self::String(s), RunContext::Logical) => Ok({
+				ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
+			}
+			.into()),
+			(Self::Variable(var), _) => Ok(ctx.lookup_var(var)),
+			(Self::Block(block), _) => block.run(ctx, rctx),
+			(Self::Number(num), _) => Ok(Value::Number(*num)),
+			// Self::String(s) => Ok(ctx.is_file()?
+			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
+			// Self::
+			other => todo!("{other:?}"),
+		}
+	}
+
 	pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
 		match self {
-			Self::String(s) => {
-				Ok(ctx.is_file()? && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes()))
-			}
+			Self::String(s) => Ok({
+				ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
+			}),
+			Self::Variable(var) => Ok(ctx.lookup_var(var).is_truthy()),
 			// Self::String(s) => Ok(ctx.is_file()?
 			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
 			// Self::

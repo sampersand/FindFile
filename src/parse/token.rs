@@ -33,7 +33,7 @@ pub enum Token {
 	Raw(Vec<u8>),
 	CliArg(isize),
 	EnvVar(OsString),
-	Variable(OsString),
+	Variable(String),
 	Number(f64),
 	DateTime(crate::DateTime),
 	FileSize(crate::FileSize),
@@ -114,13 +114,7 @@ impl Debug for Token {
 			}
 			Self::FileSize(fs) => write!(f, "Token::FileSize({fs:?})"),
 			Self::DateTime(dt) => write!(f, "Token::DateTime({dt:?})"),
-			Self::Variable(var) => {
-				if let Some(s) = var.to_str() {
-					write!(f, "Token::Variable({s:?})")
-				} else {
-					write!(f, "Token::Variable({var:?}")
-				}
-			}
+			Self::Variable(var) => write!(f, "Token::Variable({var})"),
 
 			// Block delims
 			Self::BeginBlockStart => write!(f, "Token[^(]"),
@@ -470,6 +464,7 @@ impl Token {
 		};
 
 		match suffix.as_slice() {
+			b"k" => Ok(Self::Number(num * 1000.0)),
 			_ => todo!(),
 		}
 	}
@@ -568,7 +563,9 @@ impl Token {
 			x if x.is_ascii_alphabetic() || c == b'_' => {
 				lctx.stream.untake();
 				let buf = lctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
-				Ok(Some(Self::Variable(OsString::assert_from_raw_vec(buf))))
+				Ok(Some(Self::Variable(
+					String::from_utf8(buf).or(Err(ParseError::VariableIsntUtf8))?,
+				)))
 			}
 			x if x.is_ascii_digit() => {
 				lctx.stream.untake();
