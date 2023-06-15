@@ -5,26 +5,27 @@ use std::ffi::OsString;
 use std::fmt::{self, Debug, Formatter};
 
 /*
-How do you use a `$` variable as:
-	- regex: $/$x/
-	- string: just $x, or ${x} and nothing else
-	- plain number: 0${x} -- we don't use octal prefix
-	- size: ${x}mb
-$/{x}/ - regex literal, nothing special
+IDEAS:::
+	How do you use a `$` variable as:
+		- regex: $/$x/
+		- string: just $x, or ${x} and nothing else
+		- plain number: 0${x} -- we don't use octal prefix
+		- size: ${x}mb
+	$/{x}/ - regex literal, nothing special
 
-just plain `$x` -- string
-"a${x}b" - lets you embed `x`
-${x} - also string
-#{x} - integer, possible suffix
-/{x} - path (?)
+	just plain `$x` -- string
+	"a${x}b" - lets you embed `x`
+	${x} - also string
+	#{x} - integer, possible suffix
+	/{x} - path (?)
 
-or:
-$foo -> string
-$/foo -> path (no glob)
-$*foo -> path (with glob)
-$$foo -> perl regex
-$#foo -> number
-$.foo -> file size (?)
+	or:
+	$foo -> string
+	$/foo -> path (no glob)
+	$*foo -> path (with glob)
+	$$foo -> perl regex
+	$#foo -> number
+	$.foo -> file size (?)
 
 */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

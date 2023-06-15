@@ -49,8 +49,8 @@ impl Suffix {
 
 	pub fn unit_for(pow: u32, is_byte: bool) -> &'static str {
 		match pow {
-			0 => "", // nothing
-			1 if is_byte => "K",
+			0 => "",             // nothing
+			1 if is_byte => "K", // SI defines kilobyte as `kB` but kibibyte as `KiB`/`KB`.
 			1 if !is_byte => "k",
 			2 => "M",
 			3 => "G",
