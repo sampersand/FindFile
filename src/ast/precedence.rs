@@ -25,7 +25,8 @@ impl Precedence {
 			| Token::ModuloAssign
 			| Token::Assign => Some(Self::Assignment),
 
-			Token::Equal
+			Token::Matches
+			| Token::Equal
 			| Token::NotEqual
 			| Token::LessThan
 			| Token::LessThanOrEqual

@@ -53,7 +53,7 @@ pub enum Token {
 	BeginString,
 	EndString,
 	BeginRegex,
-	EndRegex,
+	EndRegex(Vec<u8>),
 	BeginBraceEscape, //
 	EndBraceEscape,   //
 
@@ -85,9 +85,10 @@ pub enum Token {
 	ModuloAssign,   // `%=`
 
 	// logic
-	NotEqual,           // `!=`
 	Not,                // `!`
+	Matches,            // `=~`
 	Equal,              // `==`
+	NotEqual,           // `!=`
 	LessThanOrEqual,    // `<=`
 	LessThan,           // `<`
 	GreaterThanOrEqual, // `>=`
@@ -102,7 +103,7 @@ impl Debug for Token {
 			Self::BeginString => write!(f, "Token::BeginString"),
 			Self::EndString => write!(f, "Token::EndString"),
 			Self::BeginRegex => write!(f, "Token::BeginRegex"),
-			Self::EndRegex => write!(f, "Token::EndRegex"),
+			Self::EndRegex(end) => write!(f, "Token::EndRegex({end:?})"),
 			Self::BeginBraceEscape => write!(f, "Token::BeginBraceEscape"),
 			Self::EndBraceEscape => write!(f, "Token::EndBraceEscape"),
 			Self::Raw(raw) => {
@@ -153,9 +154,10 @@ impl Debug for Token {
 			Self::ModuloAssign => write!(f, "Token(%=)"),
 
 			// logic
-			Self::NotEqual => write!(f, "Token(!=)"),
 			Self::Not => write!(f, "Token(!)"),
+			Self::Matches => write!(f, "Token(=~)"),
 			Self::Equal => write!(f, "Token(==)"),
+			Self::NotEqual => write!(f, "Token(!=)"),
 			Self::LessThanOrEqual => write!(f, "Token(<=)"),
 			Self::LessThan => write!(f, "Token(<)"),
 			Self::GreaterThanOrEqual => write!(f, "Token(>=)"),
@@ -439,6 +441,38 @@ impl Token {
 		Ok(Self::Raw(buf))
 	}
 
+	fn parse_within_regex(lctx: &mut LexContext) -> Result<Self, ParseError> {
+		let mut buf = Vec::new();
+		while let Some(c) = lctx.stream.take() {
+			match c {
+				// `$` escapes for cli values and env vars
+				b'$' => {
+					lctx.push_phase(Phase::DollarSignEscape);
+					break;
+				}
+
+				// `{` escapes are for interpolation
+				b'{' => {
+					lctx.push_phase(Phase::BraceEscape);
+					lctx.push_token(Token::BeginBraceEscape);
+					break;
+				}
+
+				// `/` ends the regex, with optional syntax vars at the end.
+				b'/' => {
+					let flags = lctx.stream.take_while(|c| c.is_ascii_alphabetic()).unwrap_or_default();
+					lctx.pop_phase(Phase::WithinRegex);
+					lctx.push_token(Token::EndRegex(flags));
+					break;
+				}
+
+				_ => buf.push(c),
+			}
+		}
+
+		Ok(Self::Raw(buf))
+	}
+
 	pub fn parse(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		if lctx.stream.is_eof() {
 			return match lctx.pop_phase_unchecked() {
@@ -453,7 +487,7 @@ impl Token {
 		match lctx.phase() {
 			Some(Phase::WithinPath) => Self::parse_within_path(lctx).map(Some),
 			Some(Phase::WithinString) => Self::parse_within_string(lctx).map(Some),
-			Some(Phase::WithinRegex) => todo!(),
+			Some(Phase::WithinRegex) => Self::parse_within_regex(lctx).map(Some),
 			Some(Phase::DollarSignEscape) => Self::parse_dollar_sign_escape(lctx).map(Some),
 
 			Some(Phase::BraceEscape) => {
@@ -576,6 +610,7 @@ impl Token {
 
 			// Logic
 			b'!' => ifeq!(NotEqual, Not),
+			b'=' if lctx.stream.take_if_byte(b'~') => Ok(Some(Self::Matches)),
 			b'=' => ifeq!(Equal, Assign),
 			b'<' => ifeq!(LessThanOrEqual, LessThan),
 			b'>' => ifeq!(GreaterThanOrEqual, GreaterThan),

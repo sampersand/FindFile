@@ -6,7 +6,7 @@ pub use lex_context::{LexContext, Phase};
 pub use stream::Stream;
 pub use token::Token;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ParseError {
 	Eof,
 	VariableIsntUtf8,
@@ -29,4 +29,11 @@ pub enum ParseError {
 	MissingRhsToLogicOp,
 	FileSizeLiteralTooLarge,
 	AssignToNonVariable,
+	InvalidRegex(crate::regex::RegexParseError),
+}
+
+impl From<crate::regex::RegexParseError> for ParseError {
+	fn from(err: crate::regex::RegexParseError) -> Self {
+		Self::InvalidRegex(err)
+	}
 }

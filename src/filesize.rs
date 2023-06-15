@@ -48,9 +48,11 @@ impl FileSize {
 	}
 
 	pub fn fuzzy_matches(self, tomatch: Self) -> bool {
-		let precision = match self.precision {
-			Some(0..=9) | None => return self == tomatch,
-			Some(precision) => precision,
+		if self.bytes() < 10 {
+			return self == tomatch;
+		}
+		let Some(precision) = self.precision else {
+			return self == tomatch;
 		};
 
 		let bytes = self.bytes();

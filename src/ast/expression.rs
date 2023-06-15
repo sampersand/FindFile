@@ -113,7 +113,7 @@ impl Expression {
 				.map(Value::from),
 			Self::Assignment(name, op, rhs) => {
 				let value = if let Some(op) = op {
-					let old = ctx.lookup_var(name);
+					let old = ctx.lookup_var(name)?;
 					op.run(&old, &rhs.run(ctx, RunContext::Any)?)?
 				} else {
 					rhs.run(ctx, RunContext::Any)?

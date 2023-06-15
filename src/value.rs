@@ -1,21 +1,29 @@
+use crate::play::PlayContext;
 use crate::play::PlayResult;
-use crate::FileSize;
-use crate::PathRegex;
+use crate::play::RunContext;
+use crate::{FileSize, PathRegex, Regex};
+use os_str_bytes::OsStrBytes;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
-	Text(Vec<u8>),
+	Text(Rc<[u8]>),
 	Number(f64),
 	Path(PathBuf),
 	PathRegex(PathRegex),
 	FileSize(FileSize),
+	Regex(Regex),
 }
 
 impl Default for Value {
 	fn default() -> Self {
-		Self::Text(vec![])
+		Self::Text(vec![].into())
 	}
+}
+
+fn slice_contains(haystack: &[u8], needle: &[u8]) -> bool {
+	haystack.windows(needle.len()).any(|c| c == needle)
 }
 
 impl Value {
@@ -23,6 +31,28 @@ impl Value {
 		match self {
 			Self::Text(v) => !v.is_empty(),
 			Self::Number(v) => *v != 0.0,
+			_ => todo!(),
+		}
+	}
+
+	pub fn matches(&self, rhs: &Self) -> PlayResult<bool> {
+		match (self, rhs) {
+			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.fuzzy_matches(*rhs)),
+			(Self::Regex(regex), Self::Text(rhs)) => Ok(regex.is_match(&rhs)),
+			(Self::Text(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
+			_ => todo!(),
+		}
+	}
+
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Self> {
+		match (self, rctx) {
+			(Self::Text(s), RunContext::Logical) => {
+				Ok({ ctx.is_file() && slice_contains(&ctx.contents()?, &s) }.into())
+			}
+			(Self::FileSize(size), RunContext::Logical) => Ok(size.fuzzy_matches(ctx.size()).into()),
+			(Self::Regex(regex), RunContext::Logical) => Ok(regex.is_match(&ctx.contents()?).into()),
+
+			(_, RunContext::Any) => Ok(self.clone()),
 			_ => todo!(),
 		}
 	}
@@ -65,9 +95,9 @@ impl Value {
 impl From<bool> for Value {
 	fn from(b: bool) -> Self {
 		if b {
-			Self::Text(vec![b'1'])
+			Self::Number(1.0)
 		} else {
-			Self::Text(vec![])
+			Self::Number(0.0)
 		}
 	}
 }
@@ -75,5 +105,11 @@ impl From<bool> for Value {
 impl From<FileSize> for Value {
 	fn from(size: FileSize) -> Self {
 		Self::FileSize(size)
+	}
+}
+
+impl From<Rc<[u8]>> for Value {
+	fn from(text: Rc<[u8]>) -> Self {
+		Self::Text(text)
 	}
 }

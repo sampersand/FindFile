@@ -6,12 +6,13 @@ use std::ffi::{OsStr, OsString};
 use std::fs::{DirEntry, FileType, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct PlayContext<'a> {
 	path: PathBuf,
 	program: &'a mut Program,
-	contents: Option<OsString>,
+	contents: Option<Rc<[u8]>>,
 	file_type: FileType,
 	metadata: Metadata,
 }
@@ -45,20 +46,21 @@ impl<'a> PlayContext<'a> {
 		self.file_type.is_file()
 	}
 
-	pub fn contents(&mut self) -> io::Result<&OsStr> {
+	pub fn contents(&mut self) -> io::Result<Rc<[u8]>> {
 		if self.contents.is_none() {
-			self.contents = Some(OsString::assert_from_raw_vec(std::fs::read(self.path())?));
+			self.contents = Some(std::fs::read(self.path())?.into());
 		}
 
-		Ok(self.contents.as_deref().unwrap())
+		Ok(self.contents.clone().unwrap())
 	}
 
-	pub fn lookup_var(&self, name: &str) -> Value {
+	pub fn lookup_var(&mut self, name: &str) -> PlayResult<Value> {
 		match name {
-			"dir?" | "d?" => self.is_dir().into(),
-			"file?" | "f?" => self.is_file().into(),
-			"size" | "z" => self.size().into(),
-			_ => self.program.vars.get(name).cloned().unwrap_or_default(),
+			"dir?" | "d?" => Ok(self.is_dir().into()),
+			"file?" | "f?" => Ok(self.is_file().into()),
+			"size" | "z" => Ok(self.size().into()),
+			"contents" | "c" => Ok(self.contents()?.into()),
+			_ => Ok(self.program.vars.get(name).cloned().unwrap_or_default()),
 		}
 	}
 

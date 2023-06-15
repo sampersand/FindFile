@@ -1,6 +1,7 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::Regex;
 use crate::{DateTime, FileSize, PathRegex, Value};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::{OsStr, OsString};
@@ -19,15 +20,11 @@ pub enum Atom {
 	Path(PathRegex),
 
 	InterpolatedString(Interpolated),
-	String(OsString),
-
 	InterpolatedRegex(Interpolated, RegexFlags),
 	Regex(OsString, RegexFlags), // todo: actual regex
 
+	Value(Value),
 	Variable(String),
-	Number(f64),
-	DateTime(DateTime),
-	FileSize(FileSize),
 
 	FnCall(Box<Self>, Vec<Expression>), // note that only variables and blocks are the first arg.
 }
@@ -40,7 +37,7 @@ impl Atom {
 		begin: crate::parse::token::BeginPathKind,
 		lctx: &mut LexContext,
 	) -> Result<Self, ParseError> {
-		let interpolated = Interpolated::parse_until(lctx, Token::EndPath)?;
+		let (interpolated, _) = Interpolated::parse_until(lctx, Token::EndPath)?;
 
 		if interpolated.parts.is_empty() {
 			let osstr = OsStr::assert_from_raw_bytes(&interpolated.tail);
@@ -51,20 +48,26 @@ impl Atom {
 	}
 
 	fn parse_string(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let interpolated = Interpolated::parse_until(lctx, Token::EndString)?;
+		let (interpolated, _) = Interpolated::parse_until(lctx, Token::EndString)?;
 
 		if interpolated.parts.is_empty() {
-			Ok(Self::String(OsString::assert_from_raw_vec(interpolated.tail)))
+			Ok(Self::Value(Value::Text(interpolated.tail.into())))
 		} else {
 			Ok(Self::InterpolatedString(interpolated))
 		}
 	}
 
 	fn parse_regex(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let interpolated = Interpolated::parse_until(lctx, Token::EndRegex)?;
+		let (interpolated, flags) =
+			Interpolated::parse_until(lctx, |r: &Token| matches!(*r, Token::EndRegex(_)))?;
 
-		let _ = interpolated;
-		todo!();
+		let Token::EndRegex(flags) = flags else { unreachable!(); };
+
+		if interpolated.parts.is_empty() {
+			return Ok(Self::Value(Value::Regex(Regex::new(&interpolated.tail, &flags)?)));
+		} else {
+			todo!();
+		}
 		// if interpolated.parts.is_empty() {
 		// 	Ok(Self::String(OsString::assert_from_raw_vec(interpolated.tail)))
 		// } else {
@@ -115,20 +118,16 @@ impl Atom {
 					.parse_fncall_if_given(lctx)?,
 			)),
 			Some(Token::Variable(var)) => Ok(Some(Self::Variable(var).parse_fncall_if_given(lctx)?)),
-			Some(Token::Number(num)) => Ok(Some(Self::Number(num))),
-			Some(Token::FileSize(num)) => Ok(Some(Self::FileSize(num))),
-			Some(Token::DateTime(num)) => Ok(Some(Self::DateTime(num))),
+			Some(Token::Number(num)) => Ok(Some(Self::Value(Value::Number(num)))),
+			Some(Token::FileSize(fs)) => Ok(Some(Self::Value(Value::FileSize(fs)))),
+			Some(Token::DateTime(dt)) => Ok(Some(Self::Value(todo!() /*Value::DateTime(dt)*/))),
 			Some(Token::CliArg(pos)) => {
 				let cli = lctx.get_cli(pos).ok_or(ParseError::InvalidCliPosition(pos))?;
-				Ok(Some(Self::String(OsString::assert_from_raw_vec(
-					cli.to_raw_bytes().into_owned(),
-				))))
+				Ok(Some(Self::Value(Value::Text(cli.to_raw_bytes().into_owned().into()))))
 			}
 			Some(Token::EnvVar(var)) => {
 				let env = lctx.get_env(&var).ok_or(ParseError::MissingEnvVar(var))?;
-				Ok(Some(Self::String(OsString::assert_from_raw_vec(
-					env.to_raw_bytes().into_owned(),
-				))))
+				Ok(Some(Self::Value(Value::Text(env.to_raw_bytes().into_owned().into()))))
 			}
 
 			Some(other) => {
@@ -140,23 +139,13 @@ impl Atom {
 	}
 }
 
-fn slice_contains(haystack: &[u8], needle: &[u8]) -> bool {
-	haystack.windows(needle.len()).any(|c| c == needle)
-}
-
 impl Atom {
 	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
 		match (self, rctx) {
 			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContext::Logical),
-			(Self::String(s), RunContext::Logical) => Ok({
-				ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
-			}
-			.into()),
-			(Self::Variable(var), _) => Ok(ctx.lookup_var(var)),
+			(Self::Variable(var), _) => ctx.lookup_var(var),
 			(Self::Block(block), _) => block.run(ctx, rctx),
-			(Self::Number(num), _) => Ok(Value::Number(*num)),
-			(Self::FileSize(size), RunContext::Any) => Ok(Value::FileSize(*size)),
-			(Self::FileSize(size), RunContext::Logical) => Ok(size.fuzzy_matches(ctx.size()).into()),
+			(Self::Value(val), _) => val.run(ctx, rctx),
 			// Self::String(s) => Ok(ctx.is_file()?
 			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
 			// Self::
@@ -164,18 +153,18 @@ impl Atom {
 		}
 	}
 
-	pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
-		match self {
-			Self::String(s) => Ok({
-				ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
-			}),
-			Self::Variable(var) => Ok(ctx.lookup_var(var).is_truthy()),
-			// Self::String(s) => Ok(ctx.is_file()?
-			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
-			// Self::
-			other => todo!("{other:?}"),
-		}
-	}
+	// pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
+	// 	match self {
+	// 		Self::String(s) => Ok({
+	// 			ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
+	// 		}),
+	// 		Self::Variable(var) => Ok(ctx.lookup_var(var).is_truthy()),
+	// 		// Self::String(s) => Ok(ctx.is_file()?
+	// 		// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
+	// 		// Self::
+	// 		other => todo!("{other:?}"),
+	// 	}
+	// }
 }
 // #[derive(Debug, Clone, PartialEq)]
 // pub enum Atom {

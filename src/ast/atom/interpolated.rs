@@ -8,8 +8,24 @@ pub struct Interpolated {
 	pub tail: Vec<u8>,
 }
 
+pub trait End {
+	fn matches(&self, token: &Token) -> bool;
+}
+
+impl End for Token {
+	fn matches(&self, token: &Token) -> bool {
+		*self == *token
+	}
+}
+
+impl<F: Fn(&Token) -> bool> End for F {
+	fn matches(&self, token: &Token) -> bool {
+		self(token)
+	}
+}
+
 impl Interpolated {
-	pub fn parse_until(lctx: &mut LexContext, end: Token) -> Result<Self, ParseError> {
+	pub fn parse_until(lctx: &mut LexContext, end: impl End) -> Result<(Self, Token), ParseError> {
 		let mut parts = Vec::new();
 		let mut current = Vec::new();
 
@@ -28,11 +44,9 @@ impl Interpolated {
 					let expr = Block::parse_until(lctx, Token::EndBraceEscape)?;
 					parts.push((std::mem::take(&mut current), expr));
 				}
-				x if x == end => break,
+				token if end.matches(&token) => return Ok((Self { parts, tail: current }, token)),
 				token => unreachable!("invalid token in interpolation: {token:?}"),
 			}
 		}
-
-		Ok(Self { parts, tail: current })
 	}
 }

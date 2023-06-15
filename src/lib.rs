@@ -5,9 +5,11 @@ pub mod filesize;
 pub mod parse;
 pub mod pathregex;
 pub mod play;
+mod regex;
 mod value;
 pub mod vm;
 pub use pathregex::{PathParseError, PathRegex};
+pub use regex::Regex;
 pub use value::Value;
 
 #[derive(Debug, Clone, PartialEq)]

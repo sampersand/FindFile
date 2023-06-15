@@ -17,6 +17,7 @@ pub struct LexContext<'a> {
 	phases: Vec<Phase>,
 	tokens: Vec<Token>,
 	env: HashMap<OsString, Option<OsString>>,
+	cli: Vec<OsString>,
 }
 
 impl<'a> LexContext<'a> {
@@ -26,11 +27,17 @@ impl<'a> LexContext<'a> {
 			phases: Vec::with_capacity(2), // sensible defaults
 			tokens: Vec::with_capacity(2),
 			env: Default::default(),
+			cli: std::env::args_os().skip(1).collect(),
 		}
 	}
 
 	pub fn get_cli(&self, pos: isize) -> Option<&OsStr> {
-		todo!()
+		let pos = if let Ok(pos) = usize::try_from(pos) {
+			pos
+		} else {
+			usize::try_from((self.cli.len() as isize) - pos).ok()?
+		};
+		self.cli.get(pos).map(|x| &**x)
 	}
 
 	pub fn get_env<'b>(&'b mut self, name: &OsStr) -> Option<&'b OsStr> {
