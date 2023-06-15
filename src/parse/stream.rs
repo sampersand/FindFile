@@ -1,5 +1,3 @@
-use std::ffi::OsStr;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
 	WithinString,
@@ -11,91 +9,108 @@ pub enum Phase {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stream<'a> {
 	index: usize,
-
-	pub phases: Vec<Phase>,
-
-	#[cfg(any(unix, wasi))]
 	source: &'a [u8],
-
-	#[cfg(not(any(unix, wasi)))]
-	source: Vec<u8>,
+	pub phases: Vec<Phase>,
 }
 
 impl<'a> Stream<'a> {
-	pub fn new(source: &'a OsStr) -> Self {
-		Self {
-			index: 0,
-			phases: vec![],
-
-			#[cfg(any(unix, wasi))]
-			source: std::os::unix::ffi::OsStrExt::as_bytes(source),
-
-			#[cfg(not(any(unix, wasi)))]
-			source: source.to_str().expect("todo: deal with non-bytes").as_bytes().to_vec(),
-		}
+	pub fn new(source: &'a [u8]) -> Self {
+		Self { index: 0, phases: vec![], source }
 	}
 
+	/// Returns whether the stream is currently at end of file.
+	#[must_use]
 	pub fn is_eof(&self) -> bool {
-		self.index >= self.source.len()
+		self.source.len() <= self.index
 	}
 
+	/// Returns the first character without consuming it.
 	#[must_use]
 	pub fn peek(&self) -> Option<u8> {
-		self.source.get(self.index).copied()
+		self.remainder().get(0).copied()
 	}
 
-	pub fn advance(&mut self) {
+	/// Advances the stream by `len` bytes.
+	pub fn advance_by(&mut self, len: usize) {
+		self.index += len;
 		debug_assert!(self.index <= self.source.len());
-		self.index += 1;
 	}
 
-	pub fn unadvance(&mut self) {
-		debug_assert_ne!(self.index, 0); // technically redundant with builtin wrap checks
-		self.index -= 1;
-	}
-
+	/// Undoes a `take`.
 	pub fn untake(&mut self) {
 		debug_assert_ne!(self.index, 0); // technically redundant with builtin wrap checks
 		self.index -= 1;
 	}
 
+	/// Returns the first character of the stream and advances. If at end of stream,
+	/// returns `None`.
 	pub fn take(&mut self) -> Option<u8> {
 		let next = self.peek()?;
-		self.advance();
+		self.advance_by(1);
 		Some(next)
 	}
 
-	fn as_u8(&self) -> &[u8] {
-		self.source.as_ref()
+	/// Returns the first character of the stream and advances. If at end of stream,
+	/// returns `None`.
+	pub fn take_n<const N: usize>(&mut self) -> Option<[u8; N]> {
+		let x = <[u8; N]>::try_from(self.remainder().get(..N)?).unwrap();
+		self.advance_by(N);
+		Some(x)
 	}
 
-	pub fn take_if_byte(&mut self, what: u8) -> bool {
-		if !self.peek().map_or(false, |x| what == x) {
+	/// The remaining bytes in the source stream
+	#[must_use]
+	pub fn remainder(&self) -> &[u8] {
+		&self.source[self.index..]
+	}
+
+	/// Advances the stream forward if `condition` matches.
+	pub fn advance_if<C: TakeCondition>(&mut self, mut condition: C) -> bool {
+		let Some(match_len) = condition.match_len(self.remainder()) else {
 			return false;
-		}
-		self.advance();
+		};
+
+		self.advance_by(match_len);
 		true
 	}
-	pub fn take_if_starts_with(&mut self, what: &[u8]) -> bool {
-		if !self.as_u8()[self.index..].starts_with(what) {
-			return false;
+
+	/// Same
+	pub fn take_while<F: FnMut(&u8) -> bool>(&mut self, mut condition: F) -> &'a [u8] {
+		let start = self.index;
+
+		while self.advance_if(&mut condition) {
+			// do nothing
 		}
 
-		self.index += what.len();
-		true
+		&self.source[start..self.index]
 	}
+}
 
-	pub fn take_while(&mut self, mut func: impl FnMut(u8) -> bool) -> Option<Vec<u8>> {
-		let mut acc = Vec::new();
+pub trait TakeCondition {
+	// how many bytes matched is the `usize`
+	fn match_len(&mut self, source: &[u8]) -> Option<usize>;
+}
 
-		while self.peek().map_or(false, &mut func) {
-			acc.push(self.take().unwrap());
-		}
+impl TakeCondition for u8 {
+	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
+		(source.get(0) == Some(self)).then_some(1)
+	}
+}
 
-		if acc.is_empty() {
-			None
-		} else {
-			Some(acc)
-		}
+impl TakeCondition for &[u8] {
+	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
+		source.starts_with(self).then_some(self.len())
+	}
+}
+
+impl<F: FnMut(&u8) -> bool> TakeCondition for F {
+	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
+		self(source.get(0)?).then_some(1)
+	}
+}
+
+impl<const N: usize> TakeCondition for &[u8; N] {
+	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
+		self.as_slice().match_len(source)
 	}
 }

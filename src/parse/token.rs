@@ -1,4 +1,5 @@
 use crate::filesize::{FileSize, Suffix};
+use crate::parse::Stream;
 use crate::parse::{LexContext, ParseError, Phase};
 use os_str_bytes::OsStringBytes;
 use std::ffi::OsString;
@@ -37,7 +38,7 @@ pub enum BeginPathKind {
 	Anywhere, // `?/`
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Token {
 	// misc
 	Raw(Vec<u8>),
@@ -96,77 +97,6 @@ pub enum Token {
 	GreaterThan,        // `>`
 }
 
-impl Debug for Token {
-	fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-		match self {
-			Self::BeginPath(kind) => write!(f, "Token::BeginPath({kind:?})"),
-			Self::EndPath => write!(f, "Token::EndPath"),
-			Self::BeginString => write!(f, "Token::BeginString"),
-			Self::EndString => write!(f, "Token::EndString"),
-			Self::BeginRegex => write!(f, "Token::BeginRegex"),
-			Self::EndRegex(end) => write!(f, "Token::EndRegex({end:?})"),
-			Self::BeginBraceEscape => write!(f, "Token::BeginBraceEscape"),
-			Self::EndBraceEscape => write!(f, "Token::EndBraceEscape"),
-			Self::Raw(raw) => {
-				if let Ok(s) = std::str::from_utf8(&raw) {
-					write!(f, "Token::Raw({s:?})")
-				} else {
-					write!(f, "Token::Raw({raw:?}")
-				}
-			}
-			Self::Number(num) => write!(f, "Token::Number({num})"),
-			Self::CliArg(idx) => write!(f, "Token::CliArg({idx})"),
-			Self::EnvVar(var) => {
-				if let Some(s) = var.to_str() {
-					write!(f, "Token::EnvVar({s:?})")
-				} else {
-					write!(f, "Token::EnvVar({var:?}")
-				}
-			}
-			Self::FileSize(fs) => write!(f, "Token::FileSize({fs:?})"),
-			Self::DateTime(dt) => write!(f, "Token::DateTime({dt:?})"),
-			Self::Variable(var) => write!(f, "Token::Variable({var})"),
-
-			// Block delims
-			Self::BeginBlockStart => write!(f, "Token[^(]"),
-			Self::EndBlockStart => write!(f, "Token[$(]"),
-			Self::LeftParen => write!(f, "Token[(]"),
-			Self::RightParen => write!(f, "Token[)]"),
-
-			// control characters
-			Self::Question => write!(f, "Token(?)"),
-			Self::Colon => write!(f, "Token(:)"),
-			Self::Comma => write!(f, "Token(,)"),
-			Self::Semicolon => write!(f, "Token(;)"),
-			Self::And => write!(f, "Token(&)"),
-			Self::Or => write!(f, "Token(|)"),
-			Self::Assign => write!(f, "Token(=)"),
-
-			// Math
-			Self::Add => write!(f, "Token(+)"),
-			Self::AddAssign => write!(f, "Token(+=)"),
-			Self::Subtract => write!(f, "Token(-)"),
-			Self::SubtractAssign => write!(f, "Token(-=)"),
-			Self::Multiply => write!(f, "Token(*)"),
-			Self::MultiplyAssign => write!(f, "Token(*=)"),
-			Self::Divide => write!(f, "Token(//)"),
-			Self::DivideAssign => write!(f, "Token(//=)"),
-			Self::Modulo => write!(f, "Token(%)"),
-			Self::ModuloAssign => write!(f, "Token(%=)"),
-
-			// logic
-			Self::Not => write!(f, "Token(!)"),
-			Self::Matches => write!(f, "Token(=~)"),
-			Self::Equal => write!(f, "Token(==)"),
-			Self::NotEqual => write!(f, "Token(!=)"),
-			Self::LessThanOrEqual => write!(f, "Token(<=)"),
-			Self::LessThan => write!(f, "Token(<)"),
-			Self::GreaterThanOrEqual => write!(f, "Token(>=)"),
-			Self::GreaterThan => write!(f, "Token(>)"),
-		}
-	}
-}
-
 fn append(vec: &mut Vec<u8>, chr: char) {
 	// let mut buf = if_windows!([0u16; 2], [0u8; 4]);
 
@@ -177,36 +107,37 @@ fn append(vec: &mut Vec<u8>, chr: char) {
 	vec.push(u8::try_from(chr).expect("todo: actually translate it over"));
 }
 
-fn parse_escape(lctx: &mut LexContext, is_path: bool) -> Result<char, ParseError> {
+fn parse_escape(stream: &mut Stream<'_>, is_path: bool) -> Result<char, ParseError> {
 	fn parse_hex(byte: u8) -> Result<u32, ParseError> {
 		(byte as char).to_digit(16).ok_or(ParseError::BadEscape("not a hex digit"))
 	}
 
-	match lctx.stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? as char {
-		c @ ('\\' | '\"' | '\'' | '$' | '{') => Ok(c),
-		c @ ('*' | '[') if is_path => Ok(c),
-		'n' => Ok('\n'),
-		't' => Ok('\t'),
-		'r' => Ok('\r'),
-		'0' => Ok('\0'),
-		'x' => {
-			let upper =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
-			let lower =
-				parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `x`"))?)?;
-			char::from_u32((upper << 4) | lower).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
-		}
-		'u' => {
-			let x1 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x2 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x3 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
-			let x4 = parse_hex(lctx.stream.take().ok_or(ParseError::BadEscape("nothing after `u`"))?)?;
+	match stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? {
+		c @ (b'\\' | b'\"' | b'\'' | b'$' | b'{') => Ok(c as char),
+		c @ (b'*' | b'?' | b'[') if is_path => Ok(c as char),
+		b'n' => Ok('\n'),
+		b't' => Ok('\t'),
+		b'r' => Ok('\r'),
+		b'0' => Ok('\0'),
+		b'x' => {
+			let [x1, x2] = stream.take_n().ok_or(ParseError::BadEscape("nothing after `x`"))?;
 
-			char::from_u32((x1 << 12) | (x2 << 8) | (x3 << 4) | x4)
-				.ok_or(ParseError::BadEscape("invalid `\\u` escape"))
+			let hexbyte = (parse_hex(x1)? << 4) | parse_hex(x2)?;
+			char::from_u32(hexbyte).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
 		}
-		'U' => todo!(),
-		other => Err(ParseError::InvalidEscape(other)),
+		b'u' => {
+			let [x1, x2, x3, x4] =
+				stream.take_n().ok_or(ParseError::BadEscape("nothing after `u`"))?;
+
+			let hexnum = (parse_hex(x1)? << 12)
+				| (parse_hex(x2)? << 8)
+				| (parse_hex(x3)? << 4)
+				| (parse_hex(x4)? << 0);
+
+			char::from_u32(hexnum).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
+		}
+		b'U' => todo!(),
+		other => Err(ParseError::InvalidEscape(other as char)),
 	}
 }
 
@@ -230,7 +161,7 @@ fn parse_digits(lctx: &mut LexContext, into: &mut String) -> bool {
 }
 
 fn parse_base_integer(lctx: &mut LexContext) -> Option<u64> {
-	if !lctx.stream.take_if_byte(b'0') {
+	if !lctx.stream.advance_if(b'0') {
 		return None;
 	}
 
@@ -265,10 +196,10 @@ fn parse_base_integer(lctx: &mut LexContext) -> Option<u64> {
 fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
 	let mut buf = String::new();
 
-	if lctx.stream.take_if_byte(b'-') {
+	if lctx.stream.advance_if(b'-') {
 		buf.push('-');
 	} else {
-		let _ = lctx.stream.take_if_byte(b'+'); // omit leading `+`
+		let _ = lctx.stream.advance_if(b'+'); // omit leading `+`
 	}
 
 	if !parse_digits(lctx, &mut buf) {
@@ -277,7 +208,7 @@ fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
 
 	let precision;
 
-	if lctx.stream.take_if_byte(b'.') {
+	if lctx.stream.advance_if(b'.') {
 		buf.push('.');
 		if !parse_digits(lctx, &mut buf) {
 			return Err(ParseError::BadFloat);
@@ -291,12 +222,12 @@ fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
 		precision = Some(0);
 	}
 
-	if lctx.stream.take_if_byte(b'e') || lctx.stream.take_if_byte(b'E') {
+	if lctx.stream.advance_if(b'e') || lctx.stream.advance_if(b'E') {
 		buf.push('e');
-		if lctx.stream.take_if_byte(b'-') {
+		if lctx.stream.advance_if(b'-') {
 			buf.push('-');
 		} else {
-			let _ = lctx.stream.take_if_byte(b'+');
+			let _ = lctx.stream.advance_if(b'+');
 		}
 
 		if !parse_digits(lctx, &mut buf) {
@@ -310,17 +241,21 @@ fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
 
 fn strip_whitespace_and_comments(lctx: &mut LexContext) {
 	loop {
-		if lctx.stream.take_while(|c| c.is_ascii_whitespace()).is_some() {
+		if !lctx.stream.take_while(u8::is_ascii_whitespace).is_empty() {
 			continue;
 		}
 
-		if lctx.stream.take_if_byte(b'#') {
-			let _ = lctx.stream.take_while(|c| c != b'\n');
+		if lctx.stream.advance_if(b'#') {
+			let _ = lctx.stream.take_while(|&c| c != b'\n');
 			continue;
 		}
 
 		break;
 	}
+}
+
+fn is_ascii_alphanumeric_or_underscore(c: &u8) -> bool {
+	c.is_ascii_alphanumeric() || *c == b'_'
 }
 
 fn is_path_literal_character(c: char) -> bool {
@@ -347,7 +282,7 @@ impl Token {
 				}
 
 				// `\` escapes are for special strings
-				b'\\' => append(&mut buf, parse_escape(lctx, true)?),
+				b'\\' => append(&mut buf, parse_escape(&mut lctx.stream, true)?),
 
 				// Whitespace as well as `,();&|` indicate end of a path.
 				// In the future, I might expand what terminates a path
@@ -368,14 +303,14 @@ impl Token {
 	fn parse_cli_arg(lctx: &mut LexContext, braced: bool) -> Result<Self, ParseError> {
 		let mut buf = String::new();
 
-		if lctx.stream.take_if_byte(b'-') {
+		if lctx.stream.advance_if(b'-') {
 			buf.push('-');
 		} else {
-			let _ = lctx.stream.take_if_byte(b'+'); // ignore leading `+`
+			let _ = lctx.stream.advance_if(b'+'); // ignore leading `+`
 		}
 
 		parse_digits(lctx, &mut buf);
-		if braced && !lctx.stream.take_if_byte(b'}') {
+		if braced && !lctx.stream.advance_if(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
 
@@ -383,13 +318,14 @@ impl Token {
 	}
 
 	fn parse_env_var(lctx: &mut LexContext, braced: bool) -> Result<Self, ParseError> {
-		let buf = lctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
+		let buf = lctx.stream.take_while(is_ascii_alphanumeric_or_underscore);
+		debug_assert!(!buf.is_empty());
 
-		if braced && !lctx.stream.take_if_byte(b'}') {
+		if braced && !lctx.stream.advance_if(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
 
-		Ok(Self::EnvVar(OsString::assert_from_raw_vec(buf)))
+		Ok(Self::EnvVar(OsString::assert_from_raw_vec(buf.to_owned())))
 	}
 
 	fn parse_dollar_sign_escape(lctx: &mut LexContext) -> Result<Self, ParseError> {
@@ -399,7 +335,7 @@ impl Token {
 	}
 
 	fn parse_dollar_sign(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let braced = lctx.stream.take_if_byte(b'{');
+		let braced = lctx.stream.advance_if(b'{');
 
 		match lctx.stream.peek().expect("called parse_dollar_sign at eof") {
 			x if x.is_ascii_digit() || x == b'-' || x == b'+' => Self::parse_cli_arg(lctx, braced),
@@ -426,7 +362,7 @@ impl Token {
 				}
 
 				// `\` is for normal escapes
-				b'\\' => append(&mut buf, parse_escape(lctx, false)?),
+				b'\\' => append(&mut buf, parse_escape(&mut lctx.stream, false)?),
 
 				// `"` ends the string.
 				b'"' => {
@@ -461,9 +397,9 @@ impl Token {
 
 				// `/` ends the regex, with optional syntax vars at the end.
 				b'/' => {
-					let flags = lctx.stream.take_while(|c| c.is_ascii_alphabetic()).unwrap_or_default();
+					let flags = lctx.stream.take_while(u8::is_ascii_alphabetic);
 					lctx.pop_phase(Phase::WithinRegex);
-					lctx.push_token(Token::EndRegex(flags));
+					lctx.push_token(Token::EndRegex(flags.to_owned()));
 					break;
 				}
 
@@ -513,11 +449,12 @@ impl Token {
 			parse_float(lctx)?
 		};
 
-		let Some(suffix) = lctx.stream.take_while(|c| c.is_ascii_alphabetic()) else {
+		let suffix = lctx.stream.take_while(u8::is_ascii_alphabetic);
+		if suffix.is_empty() {
 			return Ok(Self::Number(num));
 		};
 
-		if let Some(suffix) = Suffix::from_bytes(suffix.as_slice()) {
+		if let Some(suffix) = Suffix::from_bytes(suffix) {
 			return Ok(Self::FileSize(
 				FileSize::new(num, suffix, precision).ok_or(ParseError::FileSizeLiteralTooLarge)?,
 			));
@@ -526,28 +463,28 @@ impl Token {
 	}
 
 	fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
-		if lctx.stream.take_if_starts_with(b"./") {
+		if lctx.stream.advance_if(b"./") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Pwd)));
 		}
 
-		if lctx.stream.take_if_starts_with(b"../") {
+		if lctx.stream.advance_if(b"../") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Parent)));
 		}
 
-		if lctx.stream.take_if_starts_with(b"~/") {
+		if lctx.stream.advance_if(b"~/") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Home)));
 		}
 
-		if lctx.stream.take_if_starts_with(b"?/") {
+		if lctx.stream.advance_if(b"?/") {
 			return Ok(Some(Self::BeginPath(BeginPathKind::Anywhere)));
 		}
 
-		if lctx.stream.take_if_byte(b'/') {
+		if lctx.stream.advance_if(b'/') {
 			if lctx.stream.peek() != Some(b'/') {
 				return Ok(Some(Self::BeginPath(BeginPathKind::Root)));
 			}
 
-			lctx.stream.untake(); // remove the `take_if_byte`
+			lctx.stream.untake(); // remove the `advance_if`
 		}
 
 		Ok(None)
@@ -568,7 +505,7 @@ impl Token {
 
 		macro_rules! ifeq {
 			($if_eq:ident, $if_not:ident) => {
-				Ok(Some(if lctx.stream.take_if_byte(b'=') { Self::$if_eq } else { Self::$if_not }))
+				Ok(Some(if lctx.stream.advance_if(b'=') { Self::$if_eq } else { Self::$if_not }))
 			};
 		}
 
@@ -578,14 +515,14 @@ impl Token {
 				lctx.push_phase(Phase::WithinString);
 				Ok(Some(Self::BeginString))
 			}
-			b'$' if lctx.stream.take_if_byte(b'/') => {
+			b'$' if lctx.stream.advance_if(b'/') => {
 				lctx.push_phase(Phase::WithinRegex);
 				Ok(Some(Self::BeginRegex))
 			}
 
 			// Block and delims
-			b'$' if lctx.stream.take_if_byte(b'{') => Ok(Some(Self::EndBlockStart)),
-			b'^' if lctx.stream.take_if_byte(b'{') => Ok(Some(Self::BeginBlockStart)),
+			b'$' if lctx.stream.advance_if(b'{') => Ok(Some(Self::EndBlockStart)),
+			b'^' if lctx.stream.advance_if(b'{') => Ok(Some(Self::BeginBlockStart)),
 			b'}' => Ok(Some(Self::EndBraceEscape)),
 			b'(' => Ok(Some(Self::LeftParen)),
 			b')' => Ok(Some(Self::RightParen)),
@@ -602,8 +539,8 @@ impl Token {
 			b'+' => ifeq!(AddAssign, Add),
 			b'-' => ifeq!(SubtractAssign, Subtract),
 			b'*' => ifeq!(MultiplyAssign, Multiply),
-			b'/' if lctx.stream.take_if_byte(b'/') => ifeq!(DivideAssign, Divide),
-			b'/' if lctx.stream.take_if_byte(b'=') => Ok(Some(Self::DivideAssign)),
+			b'/' if lctx.stream.advance_if(b'/') => ifeq!(DivideAssign, Divide),
+			b'/' if lctx.stream.advance_if(b'=') => Ok(Some(Self::DivideAssign)),
 			b'/' if lctx.stream.peek().map_or(false, |c| c.is_ascii_whitespace()) => {
 				Ok(Some(Self::Divide))
 			}
@@ -611,7 +548,7 @@ impl Token {
 
 			// Logic
 			b'!' => ifeq!(NotEqual, Not),
-			b'=' if lctx.stream.take_if_byte(b'~') => Ok(Some(Self::Matches)),
+			b'=' if lctx.stream.advance_if(b'~') => Ok(Some(Self::Matches)),
 			b'=' => ifeq!(Equal, Assign),
 			b'<' => ifeq!(LessThanOrEqual, LessThan),
 			b'>' => ifeq!(GreaterThanOrEqual, GreaterThan),
@@ -620,21 +557,19 @@ impl Token {
 			x if x.is_ascii_alphabetic() || c == b'_' => {
 				lctx.stream.untake();
 				let mut was_last_questionmark = false;
-				let buf = lctx
-					.stream
-					.take_while(|c| {
-						if was_last_questionmark {
-							false
-						} else if c == b'?' {
-							was_last_questionmark = true;
-							true
-						} else {
-							c.is_ascii_alphanumeric() || c == b'_'
-						}
-					})
-					.unwrap();
+				let buf = lctx.stream.take_while(|c| {
+					if was_last_questionmark {
+						false
+					} else if *c == b'?' {
+						was_last_questionmark = true;
+						true
+					} else {
+						is_ascii_alphanumeric_or_underscore(c)
+					}
+				});
+
 				Ok(Some(Self::Variable(
-					String::from_utf8(buf).or(Err(ParseError::VariableIsntUtf8))?,
+					String::from_utf8(buf.to_owned()).or(Err(ParseError::VariableIsntUtf8))?,
 				)))
 			}
 			x if x.is_ascii_digit() => {
