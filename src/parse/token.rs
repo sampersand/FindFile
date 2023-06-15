@@ -1,3 +1,4 @@
+use crate::filesize::{FileSize, Suffix};
 use crate::parse::{LexContext, ParseError, Phase};
 use os_str_bytes::OsStringBytes;
 use std::ffi::OsString;
@@ -16,6 +17,14 @@ just plain `$x` -- string
 ${x} - also string
 #{x} - integer, possible suffix
 /{x} - path (?)
+
+or:
+$foo -> string
+$/foo -> path (no glob)
+$*foo -> path (with glob)
+$$foo -> perl regex
+$#foo -> number
+$.foo -> file size (?)
 
 */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -250,7 +259,7 @@ fn parse_base_integer(lctx: &mut LexContext) -> Option<u64> {
 	u64::from_str_radix(&buf, radix).ok()
 }
 
-fn parse_float(lctx: &mut LexContext) -> Result<f64, ParseError> {
+fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
 	let mut buf = String::new();
 
 	if lctx.stream.take_if_byte(b'-') {
@@ -263,11 +272,20 @@ fn parse_float(lctx: &mut LexContext) -> Result<f64, ParseError> {
 		return Err(ParseError::BadFloat);
 	}
 
+	let precision;
+
 	if lctx.stream.take_if_byte(b'.') {
 		buf.push('.');
 		if !parse_digits(lctx, &mut buf) {
 			return Err(ParseError::BadFloat);
 		}
+		if buf.bytes().last() == Some(b'0') {
+			precision = Some(buf.bytes().rev().take_while(|&x| x == b'0').count() as u8);
+		} else {
+			precision = Some(0);
+		}
+	} else {
+		precision = Some(0);
 	}
 
 	if lctx.stream.take_if_byte(b'e') || lctx.stream.take_if_byte(b'E') {
@@ -283,7 +301,8 @@ fn parse_float(lctx: &mut LexContext) -> Result<f64, ParseError> {
 		}
 	}
 
-	buf.parse().or(Err(ParseError::BadFloat))
+	let float = buf.parse().or(Err(ParseError::BadFloat))?;
+	Ok((float, precision))
 }
 
 fn strip_whitespace_and_comments(lctx: &mut LexContext) {
@@ -453,8 +472,8 @@ impl Token {
 	}
 
 	fn parse_number(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let num = if let Some(integer) = parse_base_integer(lctx) {
-			integer as f64
+		let (num, precision) = if let Some(integer) = parse_base_integer(lctx) {
+			(integer as f64, None)
 		} else {
 			parse_float(lctx)?
 		};
@@ -463,10 +482,12 @@ impl Token {
 			return Ok(Self::Number(num));
 		};
 
-		match suffix.as_slice() {
-			b"k" => Ok(Self::Number(num * 1000.0)),
-			_ => todo!(),
+		if let Some(suffix) = Suffix::from_bytes(suffix.as_slice()) {
+			return Ok(Self::FileSize(
+				FileSize::new(num, suffix, precision).ok_or(ParseError::FileSizeLiteralTooLarge)?,
+			));
 		}
+		todo!()
 	}
 
 	fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
@@ -562,7 +583,20 @@ impl Token {
 			b'$' => Self::parse_dollar_sign(lctx).map(Some),
 			x if x.is_ascii_alphabetic() || c == b'_' => {
 				lctx.stream.untake();
-				let buf = lctx.stream.take_while(|c| c.is_ascii_alphanumeric() || c == b'_').unwrap();
+				let mut was_last_questionmark = false;
+				let buf = lctx
+					.stream
+					.take_while(|c| {
+						if was_last_questionmark {
+							false
+						} else if c == b'?' {
+							was_last_questionmark = true;
+							true
+						} else {
+							c.is_ascii_alphanumeric() || c == b'_'
+						}
+					})
+					.unwrap();
 				Ok(Some(Self::Variable(
 					String::from_utf8(buf).or(Err(ParseError::VariableIsntUtf8))?,
 				)))

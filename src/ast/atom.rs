@@ -155,6 +155,8 @@ impl Atom {
 			(Self::Variable(var), _) => Ok(ctx.lookup_var(var)),
 			(Self::Block(block), _) => block.run(ctx, rctx),
 			(Self::Number(num), _) => Ok(Value::Number(*num)),
+			(Self::FileSize(size), RunContext::Any) => Ok(Value::FileSize(*size)),
+			(Self::FileSize(size), RunContext::Logical) => Ok(size.fuzzy_matches(ctx.size()).into()),
 			// Self::String(s) => Ok(ctx.is_file()?
 			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
 			// Self::

@@ -7,6 +7,7 @@ pub enum Precedence {
 	Logic,
 	ShortCircuit,
 	Assignment,
+	Comma,
 	#[default]
 	Any,
 }
@@ -32,7 +33,7 @@ impl Precedence {
 			| Token::GreaterThanOrEqual => Some(Self::Logic),
 
 			Token::And | Token::Or => Some(Self::ShortCircuit),
-			Token::Comma if comma_is_and => Some(Self::ShortCircuit),
+			Token::Comma if comma_is_and => Some(Self::Comma),
 			_ => None,
 		}
 	}

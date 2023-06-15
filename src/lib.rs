@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 pub mod ast;
+pub mod filesize;
 pub mod parse;
 pub mod pathregex;
 pub mod play;
@@ -12,5 +13,4 @@ pub use value::Value;
 #[derive(Debug, Clone, PartialEq)]
 pub struct DateTime;
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct FileSize;
+pub use filesize::FileSize;

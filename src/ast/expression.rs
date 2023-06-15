@@ -3,14 +3,20 @@ use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
 use crate::Value;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShortCircuit {
+	And,
+	Or,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression {
 	Atom(Atom),
 	Math(MathOperator, Box<Self>, Box<Self>),
 	Logic(LogicOperator, Box<Self>, Box<Self>),
 	Assignment(String, Option<MathOperator>, Box<Self>),
-	And(Box<Self>, Box<Self>),
-	Or(Box<Self>, Box<Self>),
+	ShortCircuitAssignment(String, ShortCircuit, Box<Self>),
+	ShortCircuit(ShortCircuit, Box<Self>, Box<Self>),
 }
 
 impl Expression {
@@ -65,11 +71,11 @@ impl Expression {
 			}
 
 			if token == Token::And || token == Token::Comma && comma_is_and {
-				lhs = Self::And(lhs.into(), rhs.into());
+				lhs = Self::ShortCircuit(ShortCircuit::And, lhs.into(), rhs.into());
 				continue;
 			}
 			if token == Token::Or {
-				lhs = Self::Or(lhs.into(), rhs.into());
+				lhs = Self::ShortCircuit(ShortCircuit::Or, lhs.into(), rhs.into());
 				continue;
 			}
 
@@ -103,7 +109,7 @@ impl Expression {
 				op.run(&lhs.run(ctx, RunContext::Any)?, &rhs.run(ctx, RunContext::Any)?)
 			}
 			Self::Logic(op, lhs, rhs) => op
-				.run(&lhs.run(ctx, RunContext::Logical)?, &rhs.run(ctx, RunContext::Logical)?)
+				.run(&lhs.run(ctx, RunContext::Any)?, &rhs.run(ctx, RunContext::Any)?)
 				.map(Value::from),
 			Self::Assignment(name, op, rhs) => {
 				let value = if let Some(op) = op {
@@ -116,22 +122,34 @@ impl Expression {
 				ctx.assign_var(name, value.clone());
 				Ok(value)
 			}
-			Self::And(lhs, rhs) => {
+			Self::ShortCircuitAssignment(sc, lhs, rhs) => {
+				todo!()
+				// let value = if let Some(op) = op {
+				// 	let old = ctx.lookup_var(name);
+				// 	op.run(&old, &rhs.run(ctx, RunContext::Any)?)?
+				// } else {
+				// 	rhs.run(ctx, RunContext::Any)?
+				// };
+
+				// ctx.assign_var(name, value.clone());
+				// Ok(value)
+			}
+
+			Self::ShortCircuit(sc, lhs, rhs) => {
 				let lhs = lhs.run(ctx, RunContext::Logical)?;
-				if lhs.is_truthy() {
+				if lhs.is_truthy() == (*sc == ShortCircuit::And) {
 					rhs.run(ctx, RunContext::Logical)
 				} else {
 					Ok(lhs)
 				}
-			}
-			Self::Or(lhs, rhs) => {
-				let lhs = lhs.run(ctx, RunContext::Logical)?;
-				if lhs.is_truthy() {
-					Ok(lhs)
-				} else {
-					rhs.run(ctx, RunContext::Logical)
-				}
-			}
+			} // Self::Or(lhs, rhs) => {
+			  // 	let lhs = lhs.run(ctx, RunContext::Logical)?;
+			  // 	if lhs.is_truthy() {
+			  // 		Ok(lhs)
+			  // 	} else {
+			  // 		rhs.run(ctx, RunContext::Logical)
+			  // 	}
+			  // }
 		}
 	}
 

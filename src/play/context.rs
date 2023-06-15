@@ -1,4 +1,5 @@
 use crate::play::{PlayResult, Program};
+use crate::FileSize;
 use crate::Value;
 use os_str_bytes::OsStringBytes;
 use std::ffi::{OsStr, OsString};
@@ -32,8 +33,8 @@ impl<'a> PlayContext<'a> {
 		self.path
 	}
 
-	pub fn len(&self) -> u64 {
-		self.metadata.len()
+	pub fn size(&self) -> FileSize {
+		FileSize::from_bytes(self.metadata.len(), None)
 	}
 
 	pub fn is_dir(&self) -> bool {
@@ -54,7 +55,9 @@ impl<'a> PlayContext<'a> {
 
 	pub fn lookup_var(&self, name: &str) -> Value {
 		match name {
-			"size" => Value::Number(self.len() as f64), // todo: make this filesize
+			"dir?" | "d?" => self.is_dir().into(),
+			"file?" | "f?" => self.is_file().into(),
+			"size" | "z" => self.size().into(),
 			_ => self.program.vars.get(name).cloned().unwrap_or_default(),
 		}
 	}

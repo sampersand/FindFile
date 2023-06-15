@@ -1,4 +1,5 @@
 use crate::play::PlayResult;
+use crate::FileSize;
 use crate::PathRegex;
 use std::path::PathBuf;
 
@@ -8,6 +9,7 @@ pub enum Value {
 	Number(f64),
 	Path(PathBuf),
 	PathRegex(PathRegex),
+	FileSize(FileSize),
 }
 
 impl Default for Value {
@@ -54,6 +56,7 @@ impl Value {
 			(Self::Number(lhs), Self::Number(rhs)) => {
 				Ok(lhs.partial_cmp(&rhs).expect("todo: handle NaN <=> NaN"))
 			}
+			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.cmp(&rhs)),
 			_ => todo!("{:?} {:?}", self, rhs),
 		}
 	}
@@ -66,5 +69,11 @@ impl From<bool> for Value {
 		} else {
 			Self::Text(vec![])
 		}
+	}
+}
+
+impl From<FileSize> for Value {
+	fn from(size: FileSize) -> Self {
+		Self::FileSize(size)
 	}
 }

@@ -27,5 +27,6 @@ pub enum ParseError {
 	MissingRhsToAssignment,
 	MissingRhsToOp,
 	MissingRhsToLogicOp,
+	FileSizeLiteralTooLarge,
 	AssignToNonVariable,
 }
