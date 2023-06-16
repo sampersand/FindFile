@@ -2,6 +2,7 @@ use crate::ast::{Atom, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
 use crate::Value;
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortCircuit {
@@ -85,8 +86,73 @@ impl Expression {
 		Ok(Some(lhs))
 	}
 
-	pub fn parse_until(lctx: &mut LexContext, until: Token) -> Result<Self, ParseError> {
+	pub fn parse_until1(lctx: &mut LexContext, until: Token) -> Result<Self, ParseError> {
 		todo!();
+	}
+
+	// im not really confident in this algorithm; in the future i'll make it more robust.
+	pub fn begin_position(&self) -> Vec<PathBuf> {
+		match self {
+			Self::Atom(Atom::Value(Value::Path(path))) => vec![path.to_path_buf()],
+			Self::Atom(Atom::Value(Value::PathGlob(pathglob))) => vec![pathglob.begin_position()],
+			Self::ShortCircuit(ShortCircuit::And, lhs, rhs) => {
+				let mut beginnings = lhs.begin_position();
+
+				'out: for new in rhs.begin_position() {
+					for idx in 0..beginnings.len() {
+						// `a/b && a/b` -> `a/b`
+						if beginnings[idx] == new {
+							continue 'out;
+						}
+
+						// `a/b && a/` -> keep `a/b`
+						if beginnings[idx].starts_with(&new) {
+							continue 'out;
+						}
+
+						// `a/ && a/b` -> replace with `a/b`
+						if new.starts_with(&beginnings[idx]) {
+							beginnings[idx] = new;
+							continue 'out;
+						}
+
+						// `a/b/c && a/b/d` -> replace with `a/b`
+						for ancestor in beginnings[idx].ancestors() {
+							if new.starts_with(&ancestor) {
+								beginnings[idx] = ancestor.into();
+								continue 'out;
+							}
+						}
+
+						panic!("when does this happen?: {new:?} {old:?}", old = beginnings[idx]);
+					}
+				}
+				beginnings
+			}
+
+			Self::ShortCircuit(ShortCircuit::Or, lhs, rhs) => {
+				let mut beginnings = lhs.begin_position();
+
+				'out: for new in rhs.begin_position() {
+					for current in beginnings.iter_mut() {
+						// we already have it, nothing to do
+						if current.starts_with(&new) {
+							continue 'out;
+						}
+
+						// it's more specific, let's add it in
+						if new.starts_with(&current) {
+							*current = new;
+							continue 'out;
+						}
+					}
+					// If nothing starts with it, let's add it to the list.
+					beginnings.push(new)
+				}
+				beginnings
+			}
+			_ => vec![],
+		}
 	}
 }
 

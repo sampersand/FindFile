@@ -31,6 +31,18 @@ pub struct PathGlob {
 }
 
 impl PathGlob {
+	pub fn begin_position(&self) -> PathBuf {
+		let mut begin = self.start.clone();
+		for part in &self.parts {
+			if let PathPart::Normal(pathpart) = part {
+				begin = begin.join(pathpart);
+			} else {
+				break;
+			}
+		}
+		begin
+	}
+
 	// parses any path, doesn't care about special characters.
 	pub fn parse(source: &Path) -> Result<Self, PathParseError> {
 		assert_ne!(source, Path::new(""));

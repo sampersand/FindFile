@@ -14,7 +14,7 @@ fn main() {
 
 	let program = Program::new(vec![expr]);
 
-	program.play(".").unwrap();
+	program.play().unwrap();
 
 	// let regex = PathRegex::new("foo/*/*.txt").unwrap();
 	// dbg!(regex);

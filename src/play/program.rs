@@ -49,13 +49,24 @@ impl Program {
 		Ok(())
 	}
 
-	pub fn play<T: AsRef<Path> + ?Sized>(mut self, start: &T) -> PlayResult<()> {
-		let start = start.as_ref();
+	pub fn play(mut self) -> PlayResult<()> {
+		let mut start_pos = vec![];
+		// Todo: unify multiple exprs starting positions
+		for expr in &self.exprs {
+			start_pos.extend(expr.begin_position());
+		}
 
-		debug_assert!(start.is_dir());
+		if start_pos.is_empty() {
+			start_pos.push(".".into());
+		}
+
 		let exprs = std::mem::take(&mut self.exprs);
 
-		self._play(&exprs, start, RunContext::Logical)
+		for start in start_pos {
+			self._play(&exprs, &start, RunContext::Logical)?;
+		}
+
+		Ok(())
 	}
 }
 // ::fs::read_dir
