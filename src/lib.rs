@@ -3,6 +3,7 @@
 pub mod ast;
 pub mod filesize;
 pub mod parse;
+pub mod pathglob;
 pub mod pathregex;
 pub mod play;
 mod regex;

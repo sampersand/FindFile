@@ -483,46 +483,46 @@ impl Token {
 		todo!()
 	}
 
-	fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
-		if lctx.stream.advance_if(b"./") {
-			return Ok(Some(Self::BeginPath(BeginPathKind::Pwd)));
-		}
+	// fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+	// 	if lctx.stream.advance_if(b"./") {
+	// 		return Ok(Some(Self::BeginPath(BeginPathKind::Pwd)));
+	// 	}
 
-		if lctx.stream.advance_if(b"../") {
-			return Ok(Some(Self::BeginPath(BeginPathKind::Parent)));
-		}
+	// 	if lctx.stream.advance_if(b"../") {
+	// 		return Ok(Some(Self::BeginPath(BeginPathKind::Parent)));
+	// 	}
 
-		if lctx.stream.advance_if(b"~/") {
-			return Ok(Some(Self::BeginPath(BeginPathKind::Home)));
-		}
+	// 	if lctx.stream.advance_if(b"~/") {
+	// 		return Ok(Some(Self::BeginPath(BeginPathKind::Home)));
+	// 	}
 
-		if lctx.stream.advance_if(b"?/") {
-			return Ok(Some(Self::BeginPath(BeginPathKind::Anywhere)));
-		}
+	// 	if lctx.stream.advance_if(b"?/") {
+	// 		return Ok(Some(Self::BeginPath(BeginPathKind::Anywhere)));
+	// 	}
 
-		if lctx.stream.advance_if(b'/') {
-			if lctx.stream.peek() != Some(b'/') {
-				return Ok(Some(Self::BeginPath(BeginPathKind::Root)));
-			}
+	// 	if lctx.stream.advance_if(b'/') {
+	// 		if lctx.stream.peek() != Some(b'/') {
+	// 			return Ok(Some(Self::BeginPath(BeginPathKind::Root)));
+	// 		}
 
-			lctx.stream.untake(); // remove the `advance_if`
-		}
+	// 		lctx.stream.untake(); // remove the `advance_if`
+	// 	}
 
-		Ok(None)
-	}
+	// 	Ok(None)
+	// }
 
 	fn parse_normal(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		// remove whitespace
 		lctx.stream.strip_whitespace_and_comments();
 
-		// check to see if it's a path literal prefix
-		if let Some(path) = Self::parse_path_prefix(lctx)? {
-			lctx.push_phase(Phase::WithinPath);
-			return Ok(Some(path));
-		}
+		// // check to see if it's a path literal prefix
+		// if let Some(path) = Self::parse_path_prefix(lctx)? {
+		// 	lctx.push_phase(Phase::WithinPath);
+		// 	return Ok(Some(path));
+		// }
 
 		// Otherwise, do this
-		let Some(c) = lctx.stream.take() else { return Err(ParseError::Eof); };
+		let c = lctx.stream.take().ok_or(ParseError::Eof)?;
 
 		macro_rules! ifeq {
 			($if_eq:ident, $if_not:ident) => {
@@ -566,6 +566,8 @@ impl Token {
 				Ok(Some(Self::Divide))
 			}
 			b'%' => ifeq!(ModuloAssign, Modulo),
+
+			b'@' => todo!("parse `@` strings (like `%` strings in ruby)"),
 
 			// Logic
 			b'!' => ifeq!(NotEqual, Not),

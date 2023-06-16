@@ -39,9 +39,8 @@ impl Expression {
 				}
 			};
 
-			let Some(rhs) = Self::parse(lctx, comma_is_and, token_prec)? else {
-				return Err(ParseError::MissingRhsToOp);
-			};
+			let rhs =
+				Self::parse(lctx, comma_is_and, token_prec)?.ok_or(ParseError::MissingRhsToOp)?;
 
 			if token == Token::Assign {
 				let Self::Atom(Atom::Variable(var)) = lhs else {
