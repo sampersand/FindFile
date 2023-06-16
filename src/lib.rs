@@ -15,5 +15,6 @@ pub use value::Value;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DateTime;
+pub use pathglob::PathGlob;
 
 pub use filesize::FileSize;

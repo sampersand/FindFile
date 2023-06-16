@@ -123,10 +123,7 @@ impl PathRegex {
 		Ok(Self { start, dirs })
 	}
 
-	pub fn parse(
-		begin: crate::parse::token::BeginPathKind,
-		source: &OsStr,
-	) -> Result<Self, PathParseError> {
+	pub fn parse(source: &OsStr) -> Result<Self, PathParseError> {
 		todo!()
 	}
 

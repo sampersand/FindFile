@@ -2,7 +2,7 @@ use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
 use crate::Regex;
-use crate::{DateTime, FileSize, PathRegex, Value};
+use crate::{DateTime, FileSize, PathGlob, Value};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
 use std::ffi::{OsStr, OsString};
 
@@ -16,9 +16,7 @@ pub enum Atom {
 	Block(Block),
 	ForcedLogical(Box<Self>),
 
-	InterpolatedPath(crate::parse::token::BeginPathKind, Interpolated),
-	Path(PathRegex),
-
+	InterpolatedPath(Interpolated),
 	InterpolatedString(Interpolated),
 	InterpolatedRegex(Interpolated, RegexFlags),
 	Regex(OsString, RegexFlags), // todo: actual regex
@@ -33,17 +31,23 @@ pub enum Atom {
 pub struct RegexFlags;
 
 impl Atom {
-	fn parse_path(
-		begin: crate::parse::token::BeginPathKind,
-		lctx: &mut LexContext,
-	) -> Result<Self, ParseError> {
-		let (interpolated, _) = Interpolated::parse_until(lctx, Token::EndPath)?;
+	fn parse_path(lctx: &mut LexContext) -> Result<Self, ParseError> {
+		let (mut interpolated, _) = Interpolated::parse_until(lctx, Token::EndPath)?;
 
 		if interpolated.parts.is_empty() {
-			let osstr = OsStr::assert_from_raw_bytes(&interpolated.tail);
-			PathRegex::parse(begin, &osstr).map(Self::Path).map_err(ParseError::BadPath)
+			// todo: fix this horrible hack
+			if interpolated.tail.get(0) == Some(&b'+') {
+				interpolated.tail[0] = b'*';
+				interpolated.tail.insert(0, b'/');
+				interpolated.tail.insert(0, b'*');
+				interpolated.tail.insert(0, b'*');
+			}
+			PathGlob::parse(std::path::Path::new(&OsStr::assert_from_raw_bytes(&interpolated.tail)))
+				.map(Value::PathGlob)
+				.map(Self::Value)
+				.map_err(ParseError::BadPath)
 		} else {
-			Ok(Self::InterpolatedPath(begin, interpolated))
+			Ok(Self::InterpolatedPath(interpolated))
 		}
 	}
 
@@ -97,7 +101,7 @@ impl Atom {
 
 	pub fn parse(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		match lctx.next()? {
-			Some(Token::BeginPath(begin)) => Ok(Some(Self::parse_path(begin, lctx)?)),
+			Some(Token::BeginPath) => Ok(Some(Self::parse_path(lctx)?)),
 			Some(Token::BeginString) => Ok(Some(Self::parse_string(lctx)?)),
 			Some(Token::BeginRegex) => Ok(Some(Self::parse_regex(lctx)?)),
 
@@ -173,7 +177,7 @@ impl Atom {
 // 	Block(Block),
 
 // 	InterpolatedPath(crate::parse::token::BeginPathKind, Interpolated),
-// 	Path(PathRegex),
+// 	Path(PathGlob),
 
 // 	InterpolatedString(Interpolated),
 // 	String(OsString),

@@ -1,7 +1,7 @@
 use crate::play::PlayContext;
 use crate::play::PlayResult;
 use crate::play::RunContext;
-use crate::{FileSize, PathRegex, Regex};
+use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -11,7 +11,7 @@ pub enum Value {
 	Text(Rc<[u8]>),
 	Number(f64),
 	Path(PathBuf),
-	PathRegex(PathRegex),
+	PathGlob(PathGlob),
 	FileSize(FileSize),
 	Regex(Regex),
 }
@@ -40,6 +40,7 @@ impl Value {
 			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.fuzzy_matches(*rhs)),
 			(Self::Regex(regex), Self::Text(rhs)) => Ok(regex.is_match(&rhs)),
 			(Self::Text(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
+			// (Self::PathGlob(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
 			_ => todo!(),
 		}
 	}
@@ -51,6 +52,7 @@ impl Value {
 			}
 			(Self::FileSize(size), RunContext::Logical) => Ok(size.fuzzy_matches(ctx.size()).into()),
 			(Self::Regex(regex), RunContext::Logical) => Ok(regex.is_match(&ctx.contents()?).into()),
+			(Self::PathGlob(glob), RunContext::Logical) => Ok(glob.is_match(&ctx.path()).into()),
 
 			(_, RunContext::Any) => Ok(self.clone()),
 			(Self::Number(x), RunContext::Logical) => Ok((*x != 0.0).into()),

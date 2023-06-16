@@ -18,6 +18,14 @@ impl<'a> Stream<'a> {
 		Self { index: 0, phases: vec![], source }
 	}
 
+	pub(crate) fn _remainder_minus_one(&self) -> Option<u8> {
+		if self.index == 0 {
+			None
+		} else {
+			Some(self.source[self.index - 1])
+		}
+	}
+
 	/// Returns whether the stream is currently at end of file.
 	#[must_use]
 	pub fn is_eof(&self) -> bool {

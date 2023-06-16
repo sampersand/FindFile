@@ -15,53 +15,259 @@ end-path := ',' | '(' | ')' | ';' | '&' | '|' | WHITESPACE ;
 directory := '**' | normal {normal};
 suffix := {normal};
 */
-use std::ops::Range;
+use os_str_bytes::{OsStrBytes, OsStringBytes};
+use std::ffi::{OsStr, OsString};
+use std::ops::RangeInclusive;
+use std::path::{Component, Path, PathBuf};
+
+// ff a/b
+// ff ./a/b
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathGlob {
-	pub prefix: Option<Component>,
-	pub dirs: Vec<Directory>,
-	pub suffix: Option<Component>,
+	start: Option<PathBuf>,
+	parts: Vec<PathPart>,
+	is_dir: bool, // if it ends in `/`
 }
 
-// impl PathGlob {
-// 	pub fn parse_from(mut source: &[u8]) -> Result<Self, PathParseError> {
-// 		let prefix = match *source.get(0).ok_or(PathParseError::EmptySource)? as char {
-// 			std::path::MAIN_SEPARATOR => None, // ie it's an absolute path
-// 			c if PATH_START_CHARACTERS.contains(c) => todo!(),
-// 			other => return Err(PathParseError::NotAPathStart(other)),
-// 		};
+impl PathGlob {
+	// parses any path, doesn't care about special characters.
+	pub fn parse(source: &Path) -> Result<Self, PathParseError> {
+		assert_ne!(source, Path::new(""));
+		let mut components = source.components();
 
-// 		todo!()
+		let (start, first_component) = match components.next().ok_or(PathParseError::NoPathGiven)? {
+			Component::Prefix(prefix) => (Some(prefix.as_os_str().into()), None),
+			Component::RootDir => (Some("/".into()), None),
+			Component::CurDir => (Some(".".into()), None),
+			Component::ParentDir => (Some("..".into()), None),
+			norm @ Component::Normal(_) => (Some(".".into()), Some(norm)),
+		};
 
-// 		// if !PATH_START_CHARACTERS.containssource
-// 	}
-// }
+		let parts = first_component
+			.into_iter()
+			.chain(components)
+			.map(|comp| PathPart::parse(comp.as_os_str()))
+			.collect::<Result<_, _>>()?;
+
+		let is_dir = source.as_os_str().to_string_lossy().bytes().last()
+			== Some(std::path::MAIN_SEPARATOR as u8);
+		Ok(Self { start, parts, is_dir })
+	}
+
+	pub fn is_match(&self, given: &Path) -> bool {
+		// note: `.is_dir()` follows symlinks, so in the future we might not want to.
+		if self.is_dir && !given.is_dir() {
+			return false;
+		}
+
+		let mut components = given.components();
+
+		if let Some(ref start) = self.start {
+			if components.next().map_or(true, |x| x.as_os_str() != start) {
+				// todo: this might return false positives, b/c of `../` etc.
+				return false;
+			}
+		}
+
+		match_globbed_dirs(&self.parts, &components.map(Component::as_os_str).collect::<Vec<_>>())
+	}
+}
+
+fn match_globbed_dirs(parts: &[PathPart], components: &[&OsStr]) -> bool {
+	if parts.is_empty() || components.is_empty() {
+		return parts.is_empty(); // && components.is_empty();
+	}
+
+	match parts[0] {
+		PathPart::Normal(ref os) => {
+			components[0] == os && match_globbed_dirs(&parts[1..], &components[1..])
+		}
+		PathPart::Globbed(ref glob) => {
+			match_globbed_parts(&glob, &components[0].to_raw_bytes())
+				&& match_globbed_dirs(&parts[1..], &components[1..])
+		}
+		PathPart::AnyDirs => (0..components.len())
+			.map(|i| &components[i..])
+			.any(|rest| match_globbed_dirs(&parts[1..], rest)),
+	}
+}
+
+// return given.file_name().map_or(false, |last| {
+// 	self.parts.last().expect("we should always have at least 1").is_match(last)
+// });
 
 #[derive(Debug)]
 pub enum PathParseError {
-	EmptySource,
+	NoPathGiven,
 	NotAPathStart(char),
+	PrematureRangeEnd,
+	InvalidEscape(char),
+	CantGetPwd(std::io::Error),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Directory {
+enum PathPart {
 	AnyDirs,
-	Normal(Component),
+	Normal(OsString),
+	Globbed(Vec<ComponentPart>),
+}
+
+impl PathPart {
+	fn parse(source: &OsStr) -> Result<Self, PathParseError> {
+		if source.to_str() == Some("**") {
+			return Ok(Self::AnyDirs);
+		}
+
+		let mut parts = Vec::new();
+		let mut bytes = source.to_raw_bytes();
+		let mut iter = bytes.iter().copied();
+		let mut current = Vec::new();
+
+		while let Some(byte) = iter.next() {
+			if !b"*?[".contains(&byte) {
+				current.push(byte);
+				continue;
+			}
+
+			if !current.is_empty() {
+				parts.push(ComponentPart::Raw(std::mem::take(&mut current)));
+			}
+
+			parts.push(ComponentPart::Glob(match byte {
+				b'*' => Glob::ZeroOrMore,
+				b'?' => Glob::SingleChar,
+				b'[' => Glob::Range(GlobRange::parse(&mut iter)?),
+				_ => unreachable!(),
+			}));
+		}
+
+		if parts.is_empty() {
+			debug_assert!(!current.is_empty());
+			return Ok(Self::Normal(OsString::assert_from_raw_vec(current)));
+		}
+
+		if !current.is_empty() {
+			parts.push(ComponentPart::Raw(current));
+		}
+
+		Ok(Self::Globbed(parts))
+	}
+
+	fn is_match(&self, given: &OsStr) -> bool {
+		match self {
+			Self::AnyDirs => true,
+			Self::Normal(lhs) => lhs == given,
+			Self::Globbed(ref parts) => match_globbed_parts(parts, &given.to_raw_bytes()),
+		}
+	}
+}
+
+fn match_globbed_parts(parts: &[ComponentPart], given: &[u8]) -> bool {
+	if parts.is_empty() || given.is_empty() {
+		return parts.is_empty() && given.is_empty();
+	}
+
+	match parts[0] {
+		ComponentPart::Raw(ref raw) => given
+			.strip_prefix(raw.as_slice())
+			.map_or(false, |rest| match_globbed_parts(&parts[1..], rest)),
+		ComponentPart::Glob(Glob::SingleChar) => {
+			given.get(1..).map_or(false, |rest| match_globbed_parts(&parts[1..], rest))
+		}
+		ComponentPart::Glob(Glob::Range(ref range)) => {
+			given.split_first().map_or(false, |(chr, rest)| {
+				range.is_match(*chr as char) && match_globbed_parts(&parts[1..], rest)
+			})
+		}
+		ComponentPart::Glob(Glob::ZeroOrMore) => {
+			(0..given.len()).map(|i| &given[i..]).any(|rest| match_globbed_parts(&parts[1..], rest))
+		}
+	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Component(pub Vec<ComponentPart>);
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum ComponentPart {
+enum ComponentPart {
 	Raw(Vec<u8>),
 	Glob(Glob),
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Glob {
-	Glob,
+enum Glob {
+	ZeroOrMore,
 	SingleChar,
-	Range(Vec<Range<char>>),
+	Range(GlobRange),
+}
+
+#[derive(Default, Debug, Clone, PartialEq)]
+struct GlobRange {
+	negated: bool,
+	solitary: Vec<char>,
+	ranges: Vec<RangeInclusive<char>>,
+}
+
+impl GlobRange {
+	fn is_match(&self, given: char) -> bool {
+		self.negated != self._is_match(given)
+	}
+
+	fn _is_match(&self, given: char) -> bool {
+		self.solitary.iter().any(|&c| c == given)
+			|| self.ranges.iter().any(|rng| rng.contains(&given))
+	}
+
+	fn parse(iter: &mut impl Iterator<Item = u8>) -> Result<Self, PathParseError> {
+		let mut byte = iter.next().ok_or(PathParseError::PrematureRangeEnd)?;
+		let negated = byte == b'^';
+		let mut solitary = Vec::new();
+		let mut ranges = Vec::new();
+
+		if negated {
+			byte = iter.next().ok_or(PathParseError::PrematureRangeEnd)?;
+		}
+
+		loop {
+			match iter.next().ok_or(PathParseError::PrematureRangeEnd)? as char {
+				']' => return Ok(Self { negated, solitary, ranges }),
+				'-' if !solitary.is_empty() => {
+					let begin = solitary.pop().unwrap();
+					let end = iter.next().ok_or(PathParseError::PrematureRangeEnd)? as char;
+					ranges.push(begin..=end);
+				}
+
+				'&' if solitary.last() == Some(&'&')
+					|| ranges.last().map_or(false, |r| *r.end() == '&') =>
+				{
+					todo!("`&&` within char ranges")
+				}
+
+				'[' => todo!("posix-style ranges"),
+
+				'\\' => match iter.next().ok_or(PathParseError::PrematureRangeEnd)? as char {
+					c @ ('\\' | '[' | ']' | '-' | '^') => solitary.push(c),
+					'W' | 'S' | 'D' => todo!("negated regexes (will be used with `&&`)"),
+					'd' => {
+						ranges.push('0'..='9');
+					}
+					'w' => {
+						ranges.push('a'..='z');
+						ranges.push('A'..='Z');
+						ranges.push('0'..='9');
+						solitary.push('_');
+					}
+					's' => {
+						ranges.push('\x09'..='\x13'); // \t \n \v \f \r
+						solitary.push(' ');
+					}
+					'x' | 'u' | 'U' => todo!("escape for `\\x`, `\\u`, and `\\U`."),
+					'0' => solitary.push('\0'),
+					'n' => solitary.push('\n'),
+					'r' => solitary.push('\r'),
+					't' => solitary.push('\t'),
+					other => return Err(PathParseError::InvalidEscape(other)),
+				},
+				other => solitary.push(other),
+			}
+		}
+	}
 }

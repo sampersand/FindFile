@@ -19,7 +19,7 @@ pub enum ParseError {
 	MissingEndingBrace,
 	InvalidCliPosition(isize),
 	MissingEnvVar(std::ffi::OsString),
-	BadPath(crate::PathParseError),
+	BadPath(crate::pathglob::PathParseError),
 	MissingEndQuote,
 	NotAndEndOfExpression,
 	MissingEndRegex,

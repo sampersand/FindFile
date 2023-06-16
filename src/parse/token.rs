@@ -29,14 +29,6 @@ IDEAS:::
 	$.foo -> file size (?)
 
 */
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BeginPathKind {
-	Root,     // `/`
-	Pwd,      // `./`
-	Parent,   // `../`
-	Home,     // `~/`
-	Anywhere, // `?/`
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Token {
@@ -50,7 +42,7 @@ pub enum Token {
 	FileSize(crate::FileSize),
 
 	// Begin / end pairs
-	BeginPath(BeginPathKind),
+	BeginPath,
 	EndPath,
 	BeginString,
 	EndString,
@@ -81,7 +73,7 @@ pub enum Token {
 	SubtractAssign, // `-=`
 	Multiply,       // `*`
 	MultiplyAssign, // `*=`
-	Divide,         // `//` or `/` followed by a space (todo: make it non-path char)
+	Divide,         // `//` or `/` followed by a space (todo: make it non-path char), should be `div`.
 	DivideAssign,   // `/=` (for `/=` the path, do `/\=`)
 	Modulo,         // `%`
 	ModuloAssign,   // `%=`
@@ -280,6 +272,14 @@ fn is_path_literal_character(c: u8) -> bool {
 	!c.is_ascii_whitespace() && !b",();&|".contains(&c)
 }
 
+fn is_path_start(byte: u8) -> bool {
+	is_ascii_alphanumeric_or_underscore(byte) || b".+*[?".contains(&byte)
+}
+
+fn is_path_end(byte: u8) -> bool {
+	b",();&|".contains(&byte) || byte.is_ascii_whitespace()
+}
+
 impl Token {
 	fn parse_within_path(lctx: &mut LexContext) -> Result<Self, ParseError> {
 		let mut buf = Vec::new();
@@ -304,7 +304,7 @@ impl Token {
 
 				// Whitespace as well as `,();&|` indicate end of a path.
 				// In the future, I might expand what terminates a path
-				_ if is_path_literal_character(c) => {
+				_ if !is_path_literal_character(c) => {
 					lctx.stream.untake();
 					lctx.pop_phase(Phase::WithinPath);
 					lctx.push_token(Token::EndPath);
@@ -432,6 +432,10 @@ impl Token {
 	}
 
 	pub fn parse(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+		Self::_parse(lctx) // only for `dbg!`ing and logging in the future
+	}
+
+	fn _parse(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		if lctx.stream.is_eof() {
 			return match lctx.pop_phase_unchecked() {
 				Some(Phase::WithinPath) => Ok(Some(Self::EndPath)),
@@ -483,6 +487,57 @@ impl Token {
 		todo!()
 	}
 
+	fn _is_path_next_token(stream: &mut Stream) -> bool {
+		debug_assert!(!stream.is_eof()); // shouldnt have gotten here if it was.
+		let rest = stream.remainder();
+
+		// It didn't start with a path start character, abandon early.
+		if !is_path_start(rest[0]) {
+			return false;
+		}
+
+		// FIXME: total hack:
+		// `*` on its own is a path.
+		// `*` with whitespace on either side -> not a path
+		// `*` preceded by a path-character -> not a path
+		if b"*.+".contains(&rest[0])
+			&& rest.get(1).map_or(true, |c| !c.is_ascii_whitespace())
+			&& stream
+				._remainder_minus_one()
+				.map_or(true, |c| !c.is_ascii_whitespace() && !is_path_start(c))
+		{
+			return true;
+		}
+		// a `*` is a part of a path if it's the first character and is not followed by `*
+		// `a*b` -> not a path
+		// `a(*b` -> is a path
+		// 'a* 3' -> not a path
+		//
+
+		for &byte in rest {
+			if (byte as char) == std::path::MAIN_SEPARATOR {
+				return true;
+			}
+
+			if is_path_end(byte) {
+				break;
+			}
+		}
+		false
+	}
+
+	// this is not terrific, it doesnt do legit parsing like it should. (eg what if
+	// a `[]` has `/` in it, and we add `[]` for array literals in the future?)
+	// It also doesn't account for interpolation with spaces in them. So yeah,
+	// redo this in the future.
+	fn parse_path_glob(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+		if !Self::_is_path_next_token(&mut lctx.stream) {
+			return Ok(None);
+		}
+		lctx.push_phase(Phase::WithinPath);
+		Ok(Some(Self::BeginPath))
+	}
+
 	// fn parse_path_prefix(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 	// 	if lctx.stream.advance_if(b"./") {
 	// 		return Ok(Some(Self::BeginPath(BeginPathKind::Pwd)));
@@ -514,6 +569,14 @@ impl Token {
 	fn parse_normal(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		// remove whitespace
 		lctx.stream.strip_whitespace_and_comments();
+
+		if lctx.stream.is_eof() {
+			return Err(ParseError::Eof);
+		}
+
+		if let Some(pathglob) = Self::parse_path_glob(lctx)? {
+			return Ok(Some(pathglob));
+		}
 
 		// // check to see if it's a path literal prefix
 		// if let Some(path) = Self::parse_path_prefix(lctx)? {
