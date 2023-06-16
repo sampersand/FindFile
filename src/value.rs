@@ -3,14 +3,15 @@ use crate::play::PlayResult;
 use crate::play::RunContext;
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
 	Text(Rc<[u8]>),
 	Number(f64),
-	Path(PathBuf),
+	Path(Rc<Path>),
 	PathGlob(PathGlob),
 	FileSize(FileSize),
 	Regex(Regex),
@@ -40,7 +41,10 @@ impl Value {
 			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.fuzzy_matches(*rhs)),
 			(Self::Regex(regex), Self::Text(rhs)) => Ok(regex.is_match(&rhs)),
 			(Self::Text(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
-			// (Self::PathGlob(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
+			(Self::PathGlob(glob), Self::Path(path)) => Ok(glob.is_match(&path)),
+			(Self::PathGlob(glob), Self::Text(path)) => {
+				Ok(glob.is_match(std::path::Path::new(&OsStr::assert_from_raw_bytes(path.as_ref()))))
+			}
 			_ => todo!(),
 		}
 	}
@@ -114,5 +118,11 @@ impl From<FileSize> for Value {
 impl From<Rc<[u8]>> for Value {
 	fn from(text: Rc<[u8]>) -> Self {
 		Self::Text(text)
+	}
+}
+
+impl From<Rc<Path>> for Value {
+	fn from(path: Rc<Path>) -> Self {
+		Self::Path(path)
 	}
 }

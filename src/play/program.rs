@@ -40,7 +40,9 @@ impl Program {
 
 			if ctx.is_dir() {
 				let path = ctx.take_path();
-				self._play(exprs, &path, rctx)?;
+				if let Err(err) = self._play(exprs, &path, rctx) {
+					eprintln!("err: {err:?}");
+				}
 			}
 		}
 

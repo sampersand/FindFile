@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct PlayContext<'a> {
-	path: PathBuf,
+	path: Rc<Path>,
 	program: &'a mut Program,
 	contents: Option<Rc<[u8]>>,
 	file_type: FileType,
@@ -19,7 +19,7 @@ pub struct PlayContext<'a> {
 
 impl<'a> PlayContext<'a> {
 	pub fn new(program: &'a mut Program, entry: DirEntry) -> io::Result<Self> {
-		let path = entry.path();
+		let path = entry.path().into();
 		let file_type = entry.file_type()?;
 		let metadata = entry.metadata()?;
 
@@ -30,7 +30,7 @@ impl<'a> PlayContext<'a> {
 		&self.path
 	}
 
-	pub fn take_path(self) -> PathBuf {
+	pub fn take_path(self) -> Rc<Path> {
 		self.path
 	}
 
@@ -60,6 +60,7 @@ impl<'a> PlayContext<'a> {
 			"file?" | "f?" => Ok(self.is_file().into()),
 			"size" | "z" => Ok(self.size().into()),
 			"contents" | "c" => Ok(self.contents()?.into()),
+			"path" | "p" => Ok(self.path.clone().into()),
 			_ => Ok(self.program.vars.get(name).cloned().unwrap_or_default()),
 		}
 	}

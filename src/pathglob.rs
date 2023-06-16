@@ -25,7 +25,7 @@ use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathGlob {
-	start: Option<PathBuf>,
+	start: PathBuf,
 	parts: Vec<PathPart>,
 	is_dir: bool, // if it ends in `/`
 }
@@ -37,11 +37,14 @@ impl PathGlob {
 		let mut components = source.components();
 
 		let (start, first_component) = match components.next().ok_or(PathParseError::NoPathGiven)? {
-			Component::Prefix(prefix) => (Some(prefix.as_os_str().into()), None),
-			Component::RootDir => (Some("/".into()), None),
-			Component::CurDir => (Some(".".into()), None),
-			Component::ParentDir => (Some("..".into()), None),
-			norm @ Component::Normal(_) => (Some(".".into()), Some(norm)),
+			Component::Prefix(prefix) => (prefix.as_os_str().into(), None),
+			Component::RootDir => ("/".into(), None),
+			Component::CurDir => (".".into(), None),
+			Component::ParentDir => ("..".into(), None),
+			Component::Normal(x) if x.to_raw_bytes() == b"~".as_slice() => {
+				(home::home_dir().ok_or(PathParseError::CantGetHomeDir)?, None)
+			}
+			norm @ Component::Normal(_) => (".".into(), Some(norm)),
 		};
 
 		let parts = first_component
@@ -63,12 +66,15 @@ impl PathGlob {
 
 		let mut components = given.components();
 
-		if let Some(ref start) = self.start {
-			if components.next().map_or(true, |x| x.as_os_str() != start) {
-				// todo: this might return false positives, b/c of `../` etc.
-				return false;
-			}
+		if components.next().map_or(true, |x| x.as_os_str() != self.start) {
+			// todo: this might return false positives, b/c of `../` etc.
+			return false;
 		}
+
+		// optimizationf or `**/foo.txt`
+		// if self.parts[0] == PathPart::AnyDirs && self.parts.len() == 2 {
+		// 	return match_globbed_parts(self.parts[1], self.parts.
+		// }
 
 		match_globbed_dirs(&self.parts, &components.map(Component::as_os_str).collect::<Vec<_>>())
 	}
@@ -88,6 +94,7 @@ fn match_globbed_dirs(parts: &[PathPart], components: &[&OsStr]) -> bool {
 				&& match_globbed_dirs(&parts[1..], &components[1..])
 		}
 		PathPart::AnyDirs => (0..components.len())
+			.rev()
 			.map(|i| &components[i..])
 			.any(|rest| match_globbed_dirs(&parts[1..], rest)),
 	}
@@ -102,6 +109,7 @@ pub enum PathParseError {
 	NoPathGiven,
 	NotAPathStart(char),
 	PrematureRangeEnd,
+	CantGetHomeDir,
 	InvalidEscape(char),
 	CantGetPwd(std::io::Error),
 }
@@ -180,9 +188,10 @@ fn match_globbed_parts(parts: &[ComponentPart], given: &[u8]) -> bool {
 				range.is_match(*chr as char) && match_globbed_parts(&parts[1..], rest)
 			})
 		}
-		ComponentPart::Glob(Glob::ZeroOrMore) => {
-			(0..given.len()).map(|i| &given[i..]).any(|rest| match_globbed_parts(&parts[1..], rest))
-		}
+		ComponentPart::Glob(Glob::ZeroOrMore) => (0..given.len())
+			.rev()
+			.map(|i| &given[i..])
+			.any(|rest| match_globbed_parts(&parts[1..], rest)),
 	}
 }
 
@@ -222,13 +231,12 @@ impl GlobRange {
 		let mut solitary = Vec::new();
 		let mut ranges = Vec::new();
 
-		if negated {
-			byte = iter.next().ok_or(PathParseError::PrematureRangeEnd)?;
-		}
+		let mut iter = if negated { None } else { Some(byte) }.into_iter().chain(iter);
 
 		loop {
 			match iter.next().ok_or(PathParseError::PrematureRangeEnd)? as char {
 				']' => return Ok(Self { negated, solitary, ranges }),
+				'-' if solitary.is_empty() => todo!(),
 				'-' if !solitary.is_empty() => {
 					let begin = solitary.pop().unwrap();
 					let end = iter.next().ok_or(PathParseError::PrematureRangeEnd)? as char;

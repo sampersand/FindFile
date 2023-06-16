@@ -147,6 +147,9 @@ impl Atom {
 	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
 		match (self, rctx) {
 			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContext::Logical),
+			(Self::Not(atom), _) => {
+				atom.run(ctx, RunContext::Logical).map(|x| (!x.is_truthy()).into())
+			}
 			(Self::Variable(var), _) => ctx.lookup_var(var),
 			(Self::Block(block), _) => block.run(ctx, rctx),
 			(Self::Value(val), _) => val.run(ctx, rctx),

@@ -18,7 +18,7 @@ impl FileSize {
 		let integer = (amount * (suffix as u64 as f64)) as u64;
 
 		assert!(
-			10u64.checked_pow(precision.unwrap_or(0) as _).unwrap() <= integer,
+			integer == 0 || 10u64.checked_pow(precision.unwrap_or(0) as _).unwrap() <= integer,
 			"Todo: check for precision"
 		);
 		/* n.ilog10()-p >= 2?  */

@@ -26,6 +26,7 @@ impl Precedence {
 			| Token::Assign => Some(Self::Assignment),
 
 			Token::Matches
+			| Token::NotMatches
 			| Token::Equal
 			| Token::NotEqual
 			| Token::LessThan

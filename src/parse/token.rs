@@ -81,6 +81,7 @@ pub enum Token {
 	// logic
 	Not,                // `!`
 	Matches,            // `=~`
+	NotMatches,         // `!~`
 	Equal,              // `==`
 	NotEqual,           // `!=`
 	LessThanOrEqual,    // `<=`
@@ -164,13 +165,6 @@ impl<'a> Stream<'a> {
 			return Ok(None);
 		}
 
-		// If the `0` is the very last character in the string, then it's also not base integer; we
-		// have to undo the taking of the `0`.
-		let Some(basechr) = self.take() else {
-			self.untake();
-			return Ok(None);
-		};
-
 		// Figure out the radix based on the digit given
 		let radix = match self.take_if(|c| b"xXoObB".contains(&c)) {
 			// Hexadecimal literal
@@ -183,6 +177,7 @@ impl<'a> Stream<'a> {
 			// `0b` is a byte literal, so `0b<DIGIT>` is required for binary literal
 			Some(b'b' | b'B') if self.peek().map_or(false, |c| c.is_ascii_digit()) => 2,
 			Some(b'b' | b'B') => {
+				dbg!(self.peek());
 				self.untake();
 				self.untake();
 				return Ok(None);
@@ -273,7 +268,7 @@ fn is_path_literal_character(c: u8) -> bool {
 }
 
 fn is_path_start(byte: u8) -> bool {
-	is_ascii_alphanumeric_or_underscore(byte) || b".+*[?".contains(&byte)
+	is_ascii_alphanumeric_or_underscore(byte) || b"/.+*[?".contains(&byte)
 }
 
 fn is_path_end(byte: u8) -> bool {
@@ -491,22 +486,14 @@ impl Token {
 		debug_assert!(!stream.is_eof()); // shouldnt have gotten here if it was.
 		let rest = stream.remainder();
 
+		// these all unambiguously indicate a path start
+		if b"*.+/~".contains(&rest[0]) {
+			return true;
+		}
+
 		// It didn't start with a path start character, abandon early.
 		if !is_path_start(rest[0]) {
 			return false;
-		}
-
-		// FIXME: total hack:
-		// `*` on its own is a path.
-		// `*` with whitespace on either side -> not a path
-		// `*` preceded by a path-character -> not a path
-		if b"*.+".contains(&rest[0])
-			&& rest.get(1).map_or(true, |c| !c.is_ascii_whitespace())
-			&& stream
-				._remainder_minus_one()
-				.map_or(true, |c| !c.is_ascii_whitespace() && !is_path_start(c))
-		{
-			return true;
 		}
 		// a `*` is a part of a path if it's the first character and is not followed by `*
 		// `a*b` -> not a path
@@ -616,23 +603,16 @@ impl Token {
 			b':' => Ok(Some(Self::Colon)),
 			b',' => Ok(Some(Self::Comma)),
 			b';' => Ok(Some(Self::Semicolon)),
-			b'&' => Ok(Some(Self::And)),
-			b'|' => Ok(Some(Self::Or)),
+			b'&' if lctx.stream.advance_if(b'&') => Ok(Some(Self::And)),
+			b'|' if lctx.stream.advance_if(b'|') => Ok(Some(Self::Or)),
 
 			// Math
 			b'+' => ifeq!(AddAssign, Add),
 			b'-' => ifeq!(SubtractAssign, Subtract),
-			b'*' => ifeq!(MultiplyAssign, Multiply),
-			b'/' if lctx.stream.advance_if(b'/') => ifeq!(DivideAssign, Divide),
-			b'/' if lctx.stream.advance_if(b'=') => Ok(Some(Self::DivideAssign)),
-			b'/' if lctx.stream.peek().map_or(false, |c| c.is_ascii_whitespace()) => {
-				Ok(Some(Self::Divide))
-			}
-			b'%' => ifeq!(ModuloAssign, Modulo),
-
 			b'@' => todo!("parse `@` strings (like `%` strings in ruby)"),
 
 			// Logic
+			b'!' if lctx.stream.advance_if(b'~') => Ok(Some(Self::NotMatches)),
 			b'!' => ifeq!(NotEqual, Not),
 			b'=' if lctx.stream.advance_if(b'~') => Ok(Some(Self::Matches)),
 			b'=' => ifeq!(Equal, Assign),
@@ -654,9 +634,14 @@ impl Token {
 					}
 				});
 
-				Ok(Some(Self::Variable(
-					String::from_utf8(buf.to_owned()).or(Err(ParseError::VariableIsntUtf8))?,
-				)))
+				match buf {
+					b"mul" => ifeq!(MultiplyAssign, Multiply),
+					b"div" => ifeq!(DivideAssign, Divide),
+					b"mod" => ifeq!(ModuloAssign, Modulo),
+					_ => Ok(Some(Self::Variable(
+						String::from_utf8(buf.to_owned()).or(Err(ParseError::VariableIsntUtf8))?,
+					))),
+				}
 			}
 			x if x.is_ascii_digit() => {
 				lctx.stream.untake();
