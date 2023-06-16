@@ -13,7 +13,6 @@ fn main() {
 	let expr = Expression::parse(&mut lctx, true, Default::default()).unwrap().unwrap();
 
 	let program = Program::new(vec![expr]);
-
 	program.play().unwrap();
 
 	// let regex = PathRegex::new("foo/*/*.txt").unwrap();

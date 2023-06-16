@@ -46,21 +46,25 @@ impl PathGlob {
 	// parses any path, doesn't care about special characters.
 	pub fn parse(source: &Path) -> Result<Self, PathParseError> {
 		assert_ne!(source, Path::new(""));
+		let home = home::home_dir().ok_or(PathParseError::CantGetHomeDir)?;
 		let mut components = source.components();
 
-		let (start, first_component) = match components.next().ok_or(PathParseError::NoPathGiven)? {
-			Component::Prefix(prefix) => (prefix.as_os_str().into(), None),
-			Component::RootDir => ("/".into(), None),
-			Component::CurDir => (".".into(), None),
-			Component::ParentDir => ("..".into(), None),
-			Component::Normal(x) if x.to_raw_bytes() == b"~".as_slice() => {
-				(home::home_dir().ok_or(PathParseError::CantGetHomeDir)?, None)
-			}
-			norm @ Component::Normal(_) => (".".into(), Some(norm)),
-		};
+		let (start, iter, first_component) =
+			match components.next().ok_or(PathParseError::NoPathGiven)? {
+				Component::Prefix(prefix) => (prefix.as_os_str().into(), None, None),
+				Component::RootDir => ("/".into(), None, None),
+				Component::CurDir => (".".into(), None, None),
+				Component::ParentDir => ("..".into(), None, None),
+				Component::Normal(x) if x.to_raw_bytes() == b"~".as_slice() => {
+					("/".into(), Some(home.components().skip(1)), None)
+				}
+				norm @ Component::Normal(_) => (".".into(), None, Some(norm)),
+			};
 
-		let parts = first_component
+		let parts = iter
 			.into_iter()
+			.flatten()
+			.chain(first_component)
 			.chain(components)
 			.map(|comp| PathPart::parse(comp.as_os_str()))
 			.collect::<Result<_, _>>()?;
