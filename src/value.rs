@@ -53,6 +53,7 @@ impl Value {
 			(Self::Regex(regex), RunContext::Logical) => Ok(regex.is_match(&ctx.contents()?).into()),
 
 			(_, RunContext::Any) => Ok(self.clone()),
+			(Self::Number(x), RunContext::Logical) => Ok((*x != 0.0).into()),
 			_ => todo!(),
 		}
 	}

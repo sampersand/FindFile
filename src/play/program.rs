@@ -28,7 +28,7 @@ impl Program {
 
 			let mut matched = true;
 			for expr in exprs {
-				if !expr.run(&mut ctx, rctx)?.is_truthy() {
+				if !expr.run(&mut ctx, rctx).map_or(false, |x| x.is_truthy()) {
 					matched = false;
 					break;
 				}

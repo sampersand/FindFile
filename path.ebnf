@@ -1,0 +1,16 @@
+(* no whitespace is allowed between any of these thigns *)
+
+path-literal := percent-path-literal | normal-path-literal ;
+percent-path-literal (* `p` doesn't do interpolation in the body *)
+ := '%' ('P' | 'p') (? any char ?) {(? anything but that char ?)} (? that char ?) ;
+normal-path-literal := [prefix] {'/' directory} '/' [suffix] ;
+prefix := start normal ;
+
+start := (ALPHA | DIGIT | '.') | env-var | glob ;
+glob := '*' | '?' | '[' character-range ']' ;
+
+normal := start | interoplate | (? anything but end-path or '/' ?) ;
+end-path := ',' | '(' | ')' | ';' | '&' | '|' | WHITESPACE ;
+
+directory := '**' | normal {normal};
+suffix := {normal};

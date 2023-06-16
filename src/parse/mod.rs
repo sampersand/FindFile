@@ -28,6 +28,7 @@ pub enum ParseError {
 	MissingRhsToOp,
 	MissingRhsToLogicOp,
 	FileSizeLiteralTooLarge,
+	CliArgMissing,
 	AssignToNonVariable,
 	InvalidRegex(crate::regex::RegexParseError),
 }

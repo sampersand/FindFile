@@ -56,7 +56,7 @@ impl<'a> PlayContext<'a> {
 
 	pub fn lookup_var(&mut self, name: &str) -> PlayResult<Value> {
 		match name {
-			"dir?" | "d?" => Ok(self.is_dir().into()),
+			"dir?" | "directory?" | "d?" => Ok(self.is_dir().into()),
 			"file?" | "f?" => Ok(self.is_file().into()),
 			"size" | "z" => Ok(self.size().into()),
 			"contents" | "c" => Ok(self.contents()?.into()),

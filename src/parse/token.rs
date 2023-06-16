@@ -107,159 +107,177 @@ fn append(vec: &mut Vec<u8>, chr: char) {
 	vec.push(u8::try_from(chr).expect("todo: actually translate it over"));
 }
 
-fn parse_escape(stream: &mut Stream<'_>, is_path: bool) -> Result<char, ParseError> {
-	fn parse_hex(byte: u8) -> Result<u32, ParseError> {
-		(byte as char).to_digit(16).ok_or(ParseError::BadEscape("not a hex digit"))
-	}
-
-	match stream.take().ok_or(ParseError::BadEscape("nothing after backslash"))? {
-		c @ (b'\\' | b'\"' | b'\'' | b'$' | b'{') => Ok(c as char),
-		c @ (b'*' | b'?' | b'[') if is_path => Ok(c as char),
-		b'n' => Ok('\n'),
-		b't' => Ok('\t'),
-		b'r' => Ok('\r'),
-		b'0' => Ok('\0'),
-		b'x' => {
-			let [x1, x2] = stream.take_n().ok_or(ParseError::BadEscape("nothing after `x`"))?;
-
-			let hexbyte = (parse_hex(x1)? << 4) | parse_hex(x2)?;
-			char::from_u32(hexbyte).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
-		}
-		b'u' => {
-			let [x1, x2, x3, x4] =
-				stream.take_n().ok_or(ParseError::BadEscape("nothing after `u`"))?;
-
-			let hexnum = (parse_hex(x1)? << 12)
-				| (parse_hex(x2)? << 8)
-				| (parse_hex(x3)? << 4)
-				| (parse_hex(x4)? << 0);
-
-			char::from_u32(hexnum).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
-		}
-		b'U' => todo!(),
-		other => Err(ParseError::InvalidEscape(other as char)),
-	}
+fn parse_hex(byte: u8) -> Result<u32, ParseError> {
+	(byte as char).to_digit(16).ok_or(ParseError::BadEscape("not a hex digit"))
 }
 
-fn parse_digits(lctx: &mut LexContext, into: &mut String) -> bool {
-	if !lctx.stream.peek().map_or(false, |x| x.is_ascii_digit()) {
-		return false;
+impl<'a> Stream<'a> {
+	/// Parses out an escape sequence
+	fn parse_escape(&mut self, is_path: bool) -> Result<char, ParseError> {
+		match self.take().ok_or(ParseError::BadEscape("nothing after backslash"))? {
+			c @ (b'\\' | b'\"' | b'\'' | b'$' | b'{') => Ok(c as char),
+			c @ (b'*' | b'?' | b'[') if is_path => Ok(c as char),
+			b'n' => Ok('\n'),
+			b't' => Ok('\t'),
+			b'r' => Ok('\r'),
+			b'0' => Ok('\0'),
+			b'x' => {
+				let [a, b] = self.take_n().ok_or(ParseError::BadEscape("nothing after `x`"))?;
+
+				let hexbyte = (parse_hex(a)? << 4) | parse_hex(b)?;
+				char::from_u32(hexbyte).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
+			}
+			b'u' => {
+				let [a, b, c, d] = self.take_n().ok_or(ParseError::BadEscape("nothing after `u`"))?;
+
+				let hexnum = (parse_hex(a)? << 12)
+					| (parse_hex(b)? << 8)
+					| (parse_hex(c)? << 4)
+					| (parse_hex(d)? << 0);
+
+				char::from_u32(hexnum).ok_or(ParseError::BadEscape("invalid `\\u` escape"))
+			}
+			b'U' => todo!(),
+			other => Err(ParseError::InvalidEscape(other as char)),
+		}
 	}
 
-	while let Some(c) = lctx.stream.take() {
-		match c {
-			b'_' => continue,
-			_ if c.is_ascii_digit() => into.push(c as char),
-			_ => {
-				lctx.stream.untake();
-				break;
+	/// Parses out `[0-9][0-9_]*`
+	fn parse_digits(&mut self, into: &mut String) -> bool {
+		// Make sure we start with just a digit, not a `_`
+		if !self.peek().map_or(false, |x| x.is_ascii_digit()) {
+			return false;
+		}
+
+		into.extend(
+			self
+				.take_while(|c| c.is_ascii_digit() || c == b'_') // Take all digits or `_`s.
+				.iter()
+				.filter_map(|c| c.is_ascii_digit().then_some(*c as char)), // convert to char and insert
+		);
+
+		true
+	}
+
+	// Parses out a leading `-` or `+`, if given.
+	fn parse_number_sign(&mut self, buf: &mut String) {
+		if let Some(sign) = self.take_if(|c| c == b'-' || c == b'+') {
+			buf.push(sign as char);
+		}
+	}
+
+	fn parse_base_integer(&mut self) -> Result<Option<u64>, ParseError> {
+		// If it doesn't start with `0`, it's not a base integer.
+		if !self.advance_if(b'0') {
+			return Ok(None);
+		}
+
+		// If the `0` is the very last character in the string, then it's also not base integer; we
+		// have to undo the taking of the `0`.
+		let Some(basechr) = self.take() else {
+			self.untake();
+			return Ok(None);
+		};
+
+		// Figure out the radix based on the digit given
+		let radix = match self.take_if(|c| b"xXoObB".contains(&c)) {
+			// Hexadecimal literal
+			Some(b'x' | b'X') => 16,
+
+			// Octal Literal
+			Some(b'o' | b'O') => 8,
+
+			// Binary literal
+			// `0b` is a byte literal, so `0b<DIGIT>` is required for binary literal
+			Some(b'b' | b'B') if self.peek().map_or(false, |c| c.is_ascii_digit()) => 2,
+			Some(b'b' | b'B') => {
+				self.untake();
+				self.untake();
+				return Ok(None);
+			}
+
+			Some(_) => unreachable!(),
+			None => {
+				self.untake();
+				return Ok(None);
+			}
+		};
+
+		let buf = self
+			.take_while(|c| (c as char).to_digit(radix).is_some() || c == b'_')
+			.iter()
+			.filter_map(|&x| (x != b'_').then_some(x as char))
+			.collect::<String>();
+
+		u64::from_str_radix(&buf, radix).map(Some).or(Err(ParseError::BadFloat))
+	}
+
+	fn parse_float(&mut self) -> Result<(f64, Option<u8>), ParseError> {
+		let mut buf = String::new();
+
+		self.parse_number_sign(&mut buf);
+
+		if !self.parse_digits(&mut buf) {
+			return Err(ParseError::BadFloat);
+		}
+
+		// Parse trailing `.###`s.
+		//
+		// If trailing `0`s are given after the `.###` (eg `123.345000`), then those are used as the
+		// precision of the number; If no `.` is given, or it is given and no trailing `0`s are given,
+		// then the precision is zero. Precision is used with `=~` to roughly match filesizes.
+		let precision = if self.advance_if(b'.') {
+			buf.push('.');
+
+			// Unable to parse digits after `.` means there's a problem.
+			if !self.parse_digits(&mut buf) {
+				return Err(ParseError::BadFloat);
+			}
+
+			Some(buf.bytes().rev().take_while(|&x| x == b'0').count() as u8)
+		} else {
+			Some(0)
+		};
+
+		// Parse out the exponent, if it's given.
+		if self.advance_if(|c| c == b'e' || c == b'E') {
+			buf.push('e');
+
+			self.parse_number_sign(&mut buf);
+			if !self.parse_digits(&mut buf) {
+				return Err(ParseError::BadFloat);
 			}
 		}
+
+		let float = buf.parse().or(Err(ParseError::BadFloat))?;
+		Ok((float, precision))
 	}
 
-	true
-}
+	fn strip_whitespace_and_comments(&mut self) {
+		loop {
+			// If any leading whitespace is present, stirp that.
+			if !self.take_while(|c| c.is_ascii_whitespace()).is_empty() {
+				continue;
+			}
 
-fn parse_base_integer(lctx: &mut LexContext) -> Option<u64> {
-	if !lctx.stream.advance_if(b'0') {
-		return None;
-	}
+			// If the comment symbol, `#`, is supplied, then remove until end of line.
+			if self.advance_if(b'#') {
+				let _ = self.take_while(|c| c != b'\n');
+				continue;
+			}
 
-	let Some(basechr) = lctx.stream.take() else {
-		lctx.stream.untake();
-		return None;
-	};
-
-	let radix = match basechr {
-		b'x' | b'X' => 16,
-		b'o' | b'O' => 8,
-		b'b' | b'B' => 2,
-		_ => {
-			lctx.stream.untake();
-			lctx.stream.untake();
-			return None;
-		}
-	};
-
-	let mut buf = String::new();
-	while let Some(c) = lctx.stream.take() {
-		if (c as char).to_digit(radix).is_none() {
+			// If there was neither leading whitespace not a leading comment, then we're done.
 			break;
 		}
-
-		buf.push(c as char);
-	}
-
-	u64::from_str_radix(&buf, radix).ok()
-}
-
-fn parse_float(lctx: &mut LexContext) -> Result<(f64, Option<u8>), ParseError> {
-	let mut buf = String::new();
-
-	if lctx.stream.advance_if(b'-') {
-		buf.push('-');
-	} else {
-		let _ = lctx.stream.advance_if(b'+'); // omit leading `+`
-	}
-
-	if !parse_digits(lctx, &mut buf) {
-		return Err(ParseError::BadFloat);
-	}
-
-	let precision;
-
-	if lctx.stream.advance_if(b'.') {
-		buf.push('.');
-		if !parse_digits(lctx, &mut buf) {
-			return Err(ParseError::BadFloat);
-		}
-		if buf.bytes().last() == Some(b'0') {
-			precision = Some(buf.bytes().rev().take_while(|&x| x == b'0').count() as u8);
-		} else {
-			precision = Some(0);
-		}
-	} else {
-		precision = Some(0);
-	}
-
-	if lctx.stream.advance_if(b'e') || lctx.stream.advance_if(b'E') {
-		buf.push('e');
-		if lctx.stream.advance_if(b'-') {
-			buf.push('-');
-		} else {
-			let _ = lctx.stream.advance_if(b'+');
-		}
-
-		if !parse_digits(lctx, &mut buf) {
-			return Err(ParseError::BadFloat);
-		}
-	}
-
-	let float = buf.parse().or(Err(ParseError::BadFloat))?;
-	Ok((float, precision))
-}
-
-fn strip_whitespace_and_comments(lctx: &mut LexContext) {
-	loop {
-		if !lctx.stream.take_while(u8::is_ascii_whitespace).is_empty() {
-			continue;
-		}
-
-		if lctx.stream.advance_if(b'#') {
-			let _ = lctx.stream.take_while(|&c| c != b'\n');
-			continue;
-		}
-
-		break;
 	}
 }
 
-fn is_ascii_alphanumeric_or_underscore(c: &u8) -> bool {
-	c.is_ascii_alphanumeric() || *c == b'_'
+fn is_ascii_alphanumeric_or_underscore(c: u8) -> bool {
+	c.is_ascii_alphanumeric() || c == b'_'
 }
 
-fn is_path_literal_character(c: char) -> bool {
-	todo!()
+fn is_path_literal_character(c: u8) -> bool {
+	!c.is_ascii_whitespace() && !b",();&|".contains(&c)
 }
 
 impl Token {
@@ -282,11 +300,11 @@ impl Token {
 				}
 
 				// `\` escapes are for special strings
-				b'\\' => append(&mut buf, parse_escape(&mut lctx.stream, true)?),
+				b'\\' => append(&mut buf, lctx.stream.parse_escape(true)?),
 
 				// Whitespace as well as `,();&|` indicate end of a path.
 				// In the future, I might expand what terminates a path
-				_ if b",();&|".contains(&c) || c.is_ascii_whitespace() => {
+				_ if is_path_literal_character(c) => {
 					lctx.stream.untake();
 					lctx.pop_phase(Phase::WithinPath);
 					lctx.push_token(Token::EndPath);
@@ -309,7 +327,10 @@ impl Token {
 			let _ = lctx.stream.advance_if(b'+'); // ignore leading `+`
 		}
 
-		parse_digits(lctx, &mut buf);
+		if !lctx.stream.parse_digits(&mut buf) {
+			return Err(ParseError::CliArgMissing);
+		}
+
 		if braced && !lctx.stream.advance_if(b'}') {
 			return Err(ParseError::MissingEndingBrace);
 		}
@@ -362,7 +383,7 @@ impl Token {
 				}
 
 				// `\` is for normal escapes
-				b'\\' => append(&mut buf, parse_escape(&mut lctx.stream, false)?),
+				b'\\' => append(&mut buf, lctx.stream.parse_escape(false)?),
 
 				// `"` ends the string.
 				b'"' => {
@@ -397,7 +418,7 @@ impl Token {
 
 				// `/` ends the regex, with optional syntax vars at the end.
 				b'/' => {
-					let flags = lctx.stream.take_while(u8::is_ascii_alphabetic);
+					let flags = lctx.stream.take_while(|c| c.is_ascii_alphabetic());
 					lctx.pop_phase(Phase::WithinRegex);
 					lctx.push_token(Token::EndRegex(flags.to_owned()));
 					break;
@@ -443,13 +464,13 @@ impl Token {
 	}
 
 	fn parse_number(lctx: &mut LexContext) -> Result<Self, ParseError> {
-		let (num, precision) = if let Some(integer) = parse_base_integer(lctx) {
+		let (num, precision) = if let Some(integer) = lctx.stream.parse_base_integer()? {
 			(integer as f64, None)
 		} else {
-			parse_float(lctx)?
+			lctx.stream.parse_float()?
 		};
 
-		let suffix = lctx.stream.take_while(u8::is_ascii_alphabetic);
+		let suffix = lctx.stream.take_while(|c| c.is_ascii_alphabetic());
 		if suffix.is_empty() {
 			return Ok(Self::Number(num));
 		};
@@ -492,7 +513,7 @@ impl Token {
 
 	fn parse_normal(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
 		// remove whitespace
-		strip_whitespace_and_comments(lctx);
+		lctx.stream.strip_whitespace_and_comments();
 
 		// check to see if it's a path literal prefix
 		if let Some(path) = Self::parse_path_prefix(lctx)? {
@@ -560,7 +581,7 @@ impl Token {
 				let buf = lctx.stream.take_while(|c| {
 					if was_last_questionmark {
 						false
-					} else if *c == b'?' {
+					} else if c == b'?' {
 						was_last_questionmark = true;
 						true
 					} else {

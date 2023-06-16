@@ -60,22 +60,22 @@ impl<'a> Stream<'a> {
 
 	/// The remaining bytes in the source stream
 	#[must_use]
-	pub fn remainder(&self) -> &[u8] {
+	pub fn remainder(&self) -> &'a [u8] {
 		&self.source[self.index..]
 	}
 
 	/// Advances the stream forward if `condition` matches.
-	pub fn advance_if<C: TakeCondition>(&mut self, mut condition: C) -> bool {
-		let Some(match_len) = condition.match_len(self.remainder()) else {
-			return false;
-		};
+	pub fn take_if<C: TakeCondition<'a>>(&mut self, mut condition: C) -> Option<C::Output> {
+		condition.take_from(self)
+	}
 
-		self.advance_by(match_len);
-		true
+	/// Advances the stream forward if `condition` matches.
+	pub fn advance_if<C: TakeCondition<'a>>(&mut self, mut condition: C) -> bool {
+		self.take_if(condition).is_some()
 	}
 
 	/// Same
-	pub fn take_while<F: FnMut(&u8) -> bool>(&mut self, mut condition: F) -> &'a [u8] {
+	pub fn take_while<F: FnMut(u8) -> bool>(&mut self, mut condition: F) -> &'a [u8] {
 		let start = self.index;
 
 		while self.advance_if(&mut condition) {
@@ -86,31 +86,45 @@ impl<'a> Stream<'a> {
 	}
 }
 
-pub trait TakeCondition {
-	// how many bytes matched is the `usize`
-	fn match_len(&mut self, source: &[u8]) -> Option<usize>;
+pub trait TakeCondition<'a> {
+	type Output;
+
+	fn take_from(&mut self, stream: &mut Stream<'a>) -> Option<Self::Output>;
 }
 
-impl TakeCondition for u8 {
-	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
-		(source.get(0) == Some(self)).then_some(1)
+impl<'a> TakeCondition<'a> for u8 {
+	type Output = Self;
+
+	fn take_from(&mut self, stream: &mut Stream<'a>) -> Option<Self::Output> {
+		(stream.peek() == Some(*self)).then(|| stream.take()).flatten()
 	}
 }
 
-impl TakeCondition for &[u8] {
-	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
-		source.starts_with(self).then_some(self.len())
+impl<'a> TakeCondition<'a> for &[u8] {
+	type Output = Self;
+
+	fn take_from(&mut self, stream: &mut Stream<'a>) -> Option<Self::Output> {
+		if !stream.remainder().starts_with(self) {
+			return None;
+		}
+
+		stream.advance_by(self.len());
+		Some(self)
 	}
 }
 
-impl<F: FnMut(&u8) -> bool> TakeCondition for F {
-	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
-		self(source.get(0)?).then_some(1)
+impl<'a, F: FnMut(u8) -> bool> TakeCondition<'a> for F {
+	type Output = u8;
+
+	fn take_from(&mut self, stream: &mut Stream<'a>) -> Option<Self::Output> {
+		self(stream.peek()?).then(|| stream.take()).flatten()
 	}
 }
 
-impl<const N: usize> TakeCondition for &[u8; N] {
-	fn match_len(&mut self, source: &[u8]) -> Option<usize> {
-		self.as_slice().match_len(source)
+impl<'a, 'b, const N: usize> TakeCondition<'a> for &'b [u8; N] {
+	type Output = &'b [u8];
+
+	fn take_from(&mut self, stream: &mut Stream<'a>) -> Option<Self::Output> {
+		self.as_slice().take_from(stream)
 	}
 }
