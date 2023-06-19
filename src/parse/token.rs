@@ -279,18 +279,19 @@ impl Token {
 	fn parse_within_path(lctx: &mut LexContext) -> Result<Self, ParseError> {
 		let mut buf = Vec::new();
 
+		let mut in_brace = false;
 		while let Some(c) = lctx.stream.take() {
 			match c {
-				// `$` escapes for cli values and env vars
-				b'$' => {
-					lctx.push_phase(Phase::DollarSignEscape);
+				// `{` escapes are for interpolation
+				b'$' if lctx.stream.take_if(b'{').is_some() => {
+					lctx.push_phase(Phase::BraceEscape);
+					lctx.push_token(Token::BeginBraceEscape);
 					break;
 				}
 
-				// `{` escapes are for interpolation
-				b'{' => {
-					lctx.push_phase(Phase::BraceEscape);
-					lctx.push_token(Token::BeginBraceEscape);
+				// `$` escapes for cli values and env vars
+				b'$' => {
+					lctx.push_phase(Phase::DollarSignEscape);
 					break;
 				}
 
@@ -299,14 +300,22 @@ impl Token {
 
 				// Whitespace as well as `,();&|` indicate end of a path.
 				// In the future, I might expand what terminates a path
-				_ if !is_path_literal_character(c) => {
+				_ if !in_brace && !is_path_literal_character(c) => {
 					lctx.stream.untake();
 					lctx.pop_phase(Phase::WithinPath);
 					lctx.push_token(Token::EndPath);
 					break;
 				}
 
-				_ => append(&mut buf, c as char),
+				_ => {
+					if c == b'{' {
+						in_brace = true;
+					} else if c == b'}' {
+						in_brace = false;
+					}
+
+					append(&mut buf, c as char)
+				}
 			}
 		}
 
@@ -612,7 +621,14 @@ impl Token {
 			b'@' => todo!("parse `@` strings (like `%` strings in ruby)"),
 
 			// Logic
-			b'!' if lctx.stream.advance_if(b'~') => Ok(Some(Self::NotMatches)),
+			b'!'
+				if lctx.stream.peek() == Some(b'~')
+					&& lctx.stream.remainder().get(1) != Some(&b'/') =>
+			{
+				// `!~`, but not `!~/`, as that's negation of a path literal.
+				lctx.stream.take();
+				Ok(Some(Self::NotMatches))
+			}
 			b'!' => ifeq!(NotEqual, Not),
 			b'=' if lctx.stream.advance_if(b'~') => Ok(Some(Self::Matches)),
 			b'=' => ifeq!(Equal, Assign),

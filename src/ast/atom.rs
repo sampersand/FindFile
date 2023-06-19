@@ -41,6 +41,7 @@ impl Atom {
 				interpolated.tail.insert(0, b'/');
 				interpolated.tail.insert(0, b'*');
 				interpolated.tail.insert(0, b'*');
+				interpolated.tail.insert(0, b'/');
 			}
 			PathGlob::parse(std::path::Path::new(&OsStr::assert_from_raw_bytes(&interpolated.tail)))
 				.map(Value::PathGlob)

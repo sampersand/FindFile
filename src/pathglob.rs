@@ -127,6 +127,7 @@ pub enum PathParseError {
 	PrematureRangeEnd,
 	CantGetHomeDir,
 	InvalidEscape(char),
+	PrematureAlternateEnd,
 	CantGetPwd(std::io::Error),
 }
 
@@ -134,7 +135,7 @@ pub enum PathParseError {
 enum PathPart {
 	AnyDirs,
 	Normal(OsString),
-	Globbed(Vec<ComponentPart>),
+	Globbed(Vec<Glob>),
 }
 
 impl PathPart {
@@ -149,21 +150,44 @@ impl PathPart {
 		let mut current = Vec::new();
 
 		while let Some(byte) = iter.next() {
-			if !b"*?[".contains(&byte) {
+			if !b"*?[{".contains(&byte) {
 				current.push(byte);
 				continue;
 			}
 
 			if !current.is_empty() {
-				parts.push(ComponentPart::Raw(std::mem::take(&mut current)));
+				parts.push(Glob::Raw(std::mem::take(&mut current)));
 			}
 
-			parts.push(ComponentPart::Glob(match byte {
+			parts.push(match byte {
 				b'*' => Glob::ZeroOrMore,
 				b'?' => Glob::SingleChar,
+				b'{' => Glob::Alternative({
+					// todo: support more than just literal text
+					let mut globs = vec![];
+					let mut current = vec![];
+					loop {
+						match iter.next().ok_or(PathParseError::PrematureAlternateEnd)? {
+							b'}' => break,
+							b'\\' => match iter.next().ok_or(PathParseError::PrematureAlternateEnd)? {
+								c @ (b',' | b'}') => current.push(c),
+								_ => todo!("other escapes"),
+							},
+							b',' => {
+								assert!(!current.is_empty(), "todo error for when `,,` appears");
+								globs.push(Glob::Raw(std::mem::take(&mut current)));
+							}
+							c => current.push(c),
+						}
+					}
+					if !current.is_empty() {
+						globs.push(Glob::Raw(current));
+					}
+					globs
+				}),
 				b'[' => Glob::Range(GlobRange::parse(&mut iter)?),
 				_ => unreachable!(),
-			}));
+			});
 		}
 
 		if parts.is_empty() {
@@ -172,7 +196,7 @@ impl PathPart {
 		}
 
 		if !current.is_empty() {
-			parts.push(ComponentPart::Raw(current));
+			parts.push(Glob::Raw(current));
 		}
 
 		Ok(Self::Globbed(parts))
@@ -187,24 +211,28 @@ impl PathPart {
 	}
 }
 
-fn match_globbed_parts(parts: &[ComponentPart], given: &[u8]) -> bool {
+fn match_globbed_parts(parts: &[Glob], given: &[u8]) -> bool {
 	if parts.is_empty() || given.is_empty() {
 		return parts.is_empty() && given.is_empty();
 	}
 
 	match parts[0] {
-		ComponentPart::Raw(ref raw) => given
+		Glob::Alternative(ref alts) => alts.iter().any(|alt| match alt {
+			Glob::Raw(ref raw) => given
+				.strip_prefix(raw.as_slice())
+				.map_or(false, |rest| match_globbed_parts(&parts[1..], rest)),
+			_ => todo!("support other alternatives"),
+		}),
+		Glob::Raw(ref raw) => given
 			.strip_prefix(raw.as_slice())
 			.map_or(false, |rest| match_globbed_parts(&parts[1..], rest)),
-		ComponentPart::Glob(Glob::SingleChar) => {
+		Glob::SingleChar => {
 			given.get(1..).map_or(false, |rest| match_globbed_parts(&parts[1..], rest))
 		}
-		ComponentPart::Glob(Glob::Range(ref range)) => {
-			given.split_first().map_or(false, |(chr, rest)| {
-				range.is_match(*chr as char) && match_globbed_parts(&parts[1..], rest)
-			})
-		}
-		ComponentPart::Glob(Glob::ZeroOrMore) => (0..given.len())
+		Glob::Range(ref range) => given.split_first().map_or(false, |(chr, rest)| {
+			range.is_match(*chr as char) && match_globbed_parts(&parts[1..], rest)
+		}),
+		Glob::ZeroOrMore => (0..given.len())
 			.rev()
 			.map(|i| &given[i..])
 			.any(|rest| match_globbed_parts(&parts[1..], rest)),
@@ -212,16 +240,12 @@ fn match_globbed_parts(parts: &[ComponentPart], given: &[u8]) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-enum ComponentPart {
-	Raw(Vec<u8>),
-	Glob(Glob),
-}
-
-#[derive(Debug, Clone, PartialEq)]
 enum Glob {
+	Raw(Vec<u8>),
 	ZeroOrMore,
 	SingleChar,
 	Range(GlobRange),
+	Alternative(Vec<Glob>),
 }
 
 #[derive(Default, Debug, Clone, PartialEq)]
