@@ -1,9 +1,22 @@
 [package]
 name = "findfile"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+authors = ["Sam Westerman", "sam <at-sign> sampersand.me"]
+description = "A more ergonomic & intuitive alternative to `find` (and `fd`)"
+repository = "https://github.com/sampersand/FindFile"
+license = "MIT OR Apache-2.0"
+keywords = ["find", "file", "grep", "tool", "search"]
+categories = ["command-line-utilities", "filesystem"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "ff"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
 
 [dependencies]
 fancy-regex = "0.11"

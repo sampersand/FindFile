@@ -12,7 +12,7 @@ use std::path::PathBuf;
 #[command(author, version, about, long_about = None)]
 struct Args {
 	/// The string containing the code
-	expr: String,
+	expr: Option<String>,
 
 	/// Positional arguments accessible via `$1`, `$2`, etc in the code.
 	args: Vec<OsString>,
@@ -31,16 +31,36 @@ struct Args {
 
 	/// File to load code from; omit `EXPR`
 	#[arg(short = 'f', long = "file")]
-	file: PathBuf,
+	file: Option<PathBuf>,
 }
 
 fn main() {
 	let args = Args::parse();
 
-	dbg!(args);
-	// for _ in 0..args.count {
-	// 	println!("Hello {}!", args.name)
-	// }
+	let expr = args.expr.unwrap_or_else(|| {
+		let f = args.file.as_ref().expect("todo: error for not supplying an expression or `-f`");
+		std::fs::read_to_string(f).expect("unable to read file contents")
+	});
+
+	let mut lctx = LexContext::new(&expr);
+	let expr = Expression::parse(&mut lctx, true, Default::default()).unwrap().unwrap();
+	let program = Program::new(vec![expr]);
+	program.play().unwrap();
+
+	// // 	// let mut lctx = LexContext::new("\"${PATH}\" 2 * 3 + 4");
+	// // 	let mut args = std::env::args();
+	// // 	let matchstr = args.skip(1).next().unwrap();
+
+	// // 	let mut lctx = LexContext::new(&matchstr);
+	// // 	let expr = Expression::parse(&mut lctx, true, Default::default()).unwrap().unwrap();
+
+	// // 	let program = Program::new(vec![expr]);
+	// // 	program.play().unwrap();
+
+	// // 	// let regex = PathRegex::new("foo/*/*.txt").unwrap();
+	// // 	// dbg!(regex);
+	// // 	// dbg!(reg.matches("foo/bar/baz.txt"));
+	// // }
 }
 
 // // fn main() {

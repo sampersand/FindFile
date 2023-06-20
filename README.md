@@ -1,10 +1,9 @@
 # FindFile (FF)
 A replacement for `find` (and `fd`) that's simple to use, but much more powerful.
 
-This repo is currently **under active development**, so it doesn't work at all. (Or, it's been abandoned and I forgot to update this README. Either or.)
+This repo is currently **under active development**, so most documentation is out of date or speculative.
 
-Here's some examples of ways to do things in ff:
-
+Here's some examples of things I want to eventually support
 - list all files in a directory: ``ff 'isfile && depth=1' ``
 - make a "tree" of files and their directories:	``ff -n 'print "\t"*depth_from(start), basename'``
 - find all files that're at least 1 gig or are newer than 10 days ago: ``ff 'size > 1g || modify > -10d'``
