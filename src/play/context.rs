@@ -10,11 +10,16 @@ use std::rc::Rc;
 
 #[derive(Debug)]
 pub struct PlayContext<'a> {
-	path: Rc<Path>,
 	program: &'a mut Program,
-	contents: Option<Rc<[u8]>>,
-	file_type: FileType,
-	metadata: Metadata,
+	pub file_info: FileInfo,
+}
+
+#[derive(Debug)]
+pub struct FileInfo {
+	pub path: Rc<Path>,
+	pub contents: Option<Rc<[u8]>>,
+	pub file_type: FileType,
+	pub metadata: Metadata,
 }
 
 impl<'a> PlayContext<'a> {
@@ -23,35 +28,31 @@ impl<'a> PlayContext<'a> {
 		let file_type = entry.file_type()?;
 		let metadata = entry.metadata()?;
 
-		Ok(Self { path, program, contents: None, file_type, metadata })
+		Ok(Self { program, file_info: FileInfo { path, contents: None, file_type, metadata } })
 	}
 
 	pub fn path(&self) -> &Path {
-		&self.path
-	}
-
-	pub fn take_path(self) -> Rc<Path> {
-		self.path
+		&self.file_info.path
 	}
 
 	pub fn size(&self) -> FileSize {
-		FileSize::from_bytes(self.metadata.len(), None)
+		FileSize::from_bytes(self.file_info.metadata.len(), None)
 	}
 
 	pub fn is_dir(&self) -> bool {
-		self.file_type.is_dir()
+		self.file_info.file_type.is_dir()
 	}
 
 	pub fn is_file(&self) -> bool {
-		self.file_type.is_file()
+		self.file_info.file_type.is_file()
 	}
 
 	pub fn contents(&mut self) -> io::Result<Rc<[u8]>> {
-		if self.contents.is_none() {
-			self.contents = Some(std::fs::read(self.path())?.into());
+		if self.file_info.contents.is_none() {
+			self.file_info.contents = Some(std::fs::read(self.path())?.into());
 		}
 
-		Ok(self.contents.clone().unwrap())
+		Ok(self.file_info.contents.clone().unwrap())
 	}
 
 	pub fn lookup_var(&mut self, name: &str) -> PlayResult<Value> {
@@ -60,12 +61,12 @@ impl<'a> PlayContext<'a> {
 			"file?" | "f?" => Ok(self.is_file().into()),
 			"size" | "z" => Ok(self.size().into()),
 			"contents" | "c" => Ok(self.contents()?.into()),
-			"path" | "p" => Ok(self.path.clone().into()),
-			_ => Ok(self.program.vars.get(name).cloned().unwrap_or_default()),
+			"path" | "p" => Ok(self.file_info.path.clone().into()),
+			_ => Ok(self.program.get_var(name).unwrap_or_default()),
 		}
 	}
 
 	pub fn assign_var(&mut self, name: &str, value: Value) {
-		self.program.vars.insert(name.into(), value);
+		self.program.assign_var(name, value);
 	}
 }

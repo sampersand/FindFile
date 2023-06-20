@@ -4,13 +4,13 @@ use clap::CommandFactory;
 use clap::Parser;
 use findfile::ast::Expression;
 use findfile::parse::LexContext;
+use findfile::play::program::{Config, Program, When};
 use findfile::play::PlayResult;
-use findfile::play::Program;
 use findfile::PathRegex;
 use std::process::ExitCode;
 
 mod cli;
-use cli::Args;
+use self::cli::{Args, Colour, IgnoreErrors, Prompt};
 
 fn main() -> ExitCode {
 	match _main() {
@@ -24,17 +24,48 @@ fn main() -> ExitCode {
 
 fn _main() -> PlayResult<ExitCode> {
 	let args = Args::parse();
-	let mut program = Program::default();
+
+	let mut program = Program::new(
+		Config {
+			cli: args.args,
+			dont_print: args.dont_print || args.count,
+			count: args.count,
+			print0: args.print0,
+			invert: args.invert,
+			stable: args.stable,
+			jobs: args.jobs,
+			ignore_errors_traversal: args.ignored_errors.contains(&IgnoreErrors::Traversal),
+			ignore_errors_os: args.ignored_errors.contains(&IgnoreErrors::Os),
+			ignore_errors_subcommand: args.ignored_errors.contains(&IgnoreErrors::Subcommand),
+			prompt: match (args.prompt, args.interactive, args.force) {
+				(Prompt::Auto, true, false) => When::Always,
+				(Prompt::Auto, false, true) => When::Never,
+				(Prompt::Auto, false, false) => When::Auto,
+				(Prompt::Always, false, false) => When::Always,
+				(Prompt::Never, false, false) => When::Never,
+				_ => unreachable!(),
+			},
+			color: match args.color {
+				Colour::Auto => When::Auto,
+				Colour::Always => When::Always,
+				Colour::Never => When::Never,
+			},
+		}
+		.check_for_unimplemented_features(),
+	);
 
 	// Run all imported files
 	for imported_file in &args.import {
-		program.run_file(&imported_file);
+		program.run_file(imported_file)?;
 	}
 
-	// let expressions = fetch_expressions(&mut args);
+	let source = if let Some(file) = args.file {
+		std::fs::read_to_string(&file)?
+	} else {
+		args.expression.unwrap_or_else(|| ".".into())
+	};
 
-	// Program::new(vec![]).play().unwrap();
-	dbg!(&args);
+	program.play_expr(&source)?;
 	return Ok(ExitCode::SUCCESS);
 
 	// Args::command()
