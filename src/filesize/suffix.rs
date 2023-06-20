@@ -62,27 +62,21 @@ impl Suffix {
 	}
 
 	// lowercase allowed
+
 	pub fn from_bytes(source: &[u8]) -> Option<Self> {
-		let mut iter = source.iter();
+		let mut iter = source.iter().copied().peekable();
 		let power = iter.next()?;
 
-		if *power == b'b' {
-			if iter.next().is_none() {
-				return Some(Self::None);
-			} else {
-				return None;
-			}
+		if power == b'b' {
+			return iter.next().is_none().then_some(Self::None);
 		}
 
-		let (is_byte, bsuffix_found) = match iter.next() {
-			Some(b'i' | b'I') => (true, false),
-			Some(b'b' | b'B') | None => (false, true),
-			_ => return None,
-		};
+		let is_byte = iter.next_if_eq(&b'i').is_some() || iter.next_if_eq(&b'I').is_some();
+		let _ = iter.next_if_eq(&b'b').is_some() || iter.next_if_eq(&b'B').is_some(); // ignore `b` and `B`
 
-		if !bsuffix_found && !matches!(iter.next(), Some(b'b' | b'B')) {
+		if iter.next().is_some() {
 			return None;
-		}
+		};
 
 		match (power.to_ascii_lowercase(), is_byte) {
 			(b'k', false) => Some(Self::KiloByte),

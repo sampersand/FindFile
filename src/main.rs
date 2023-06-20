@@ -1,10 +1,21 @@
+#![allow(unused)]
+use findfile::ast::Expression;
+use findfile::parse::LexContext;
+use findfile::play::Program;
+use findfile::PathRegex;
+
 use clap::Parser;
+use std::ffi::OsString;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
 	/// The string containing the code
 	expr: String,
+
+	/// Positional arguments accessible via `$1`, `$2`, etc in the code.
+	args: Vec<OsString>,
 
 	/// Don't print out matching lines by default
 	#[arg(short = 'n', long = "dont-print")]
@@ -13,6 +24,14 @@ struct Args {
 	/// Print out how many things matched at the end; implies `-n`
 	#[arg(short = 'c', long = "count")]
 	count: bool,
+
+	/// Emit `\0` instead of `\n` after each match
+	#[arg(short = '0', long = "print0")]
+	print0: bool,
+
+	/// File to load code from; omit `EXPR`
+	#[arg(short = 'f', long = "file")]
+	file: PathBuf,
 }
 
 fn main() {
@@ -23,12 +42,6 @@ fn main() {
 	// 	println!("Hello {}!", args.name)
 	// }
 }
-
-// #![allow(unused)]
-// use findfile::ast::Expression;
-// use findfile::parse::LexContext;
-// use findfile::play::Program;
-// use findfile::PathRegex;
 
 // // fn main() {
 // // 	// let mut lctx = LexContext::new("\"${PATH}\" 2 * 3 + 4");

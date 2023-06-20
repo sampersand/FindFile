@@ -5,9 +5,13 @@ use crate::Value;
 use std::collections::HashMap;
 use std::path::Path;
 
+mod config;
+use config::Config;
+
 #[derive(Debug)]
 pub struct Program {
 	exprs: Vec<Expression>,
+	config: Config,
 	pub(crate) vars: HashMap<String, Value>,
 }
 
