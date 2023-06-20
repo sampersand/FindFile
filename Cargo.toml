@@ -1,9 +1,9 @@
 [package]
 name = "findfile"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 authors = ["Sam Westerman", "sam <at-sign> sampersand.me"]
-description = "A more ergonomic & intuitive alternative to `find` (and `fd`)"
+description = "An ergonomic way to search for files"
 repository = "https://github.com/sampersand/FindFile"
 license = "MIT OR Apache-2.0"
 keywords = ["find", "file", "grep", "tool", "search"]
