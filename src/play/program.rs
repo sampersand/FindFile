@@ -54,7 +54,8 @@ impl Program {
 
 		for entry in std::fs::read_dir(start.as_ref())? {
 			let mut ctx = PlayContext::new(self, entry?)?;
-			let matched = expr.run(&mut ctx, RunContext::Logical).map_or(false, |x| x.is_truthy());
+			let matched =
+				dbg!(expr.run(&mut ctx, RunContext::Logical)).map_or(false, |x| x.is_truthy());
 			let fileinfo = ctx.file_info;
 
 			// Invert `matched` if given the `!` flag.

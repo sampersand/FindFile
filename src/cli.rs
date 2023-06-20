@@ -130,12 +130,14 @@ pub enum IgnoreErrors {
 	/// Ignore errors relating to traversing files (ie permission errors). Also includes getting contents
 	/// of contents we're traversing.
 	// #[value(name = "perms", aliases=["permissions", "p"])]
+	#[value(alias = "t")]
 	Traversal,
 
 	/// Any os error that's not covered by Traversal.
 	Os,
 
 	/// If ignored, the stderr from subcommands is closed.
+	#[value(alias = "s")]
 	Subcommand,
 }
 

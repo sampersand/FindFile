@@ -1,7 +1,49 @@
 # FindFile (FF)
-A replacement for `find` (and `fd`) that's simple to use, but much more powerful.
+An simple, ergonomic, and powerful replacement for `find`.
 
-This repo is currently **under active development**, so most documentation is out of date or speculative.
+<h1>Note: this repo is under active development</h1>
+The syntax is (mostly) figured out, but the internals and implementations of the syntax need a lot of work.
+
+## Road Map
+- [x] Basic Lexer
+	- [x] string literals (with interpolation): `"..."`
+	- [x] perl regex literals (with interpolation): `$/.../`
+	- [x] path literals (sorta with interpolation): `foo/*.txt`
+	- [x] filesize literals: `12kb`, `4.9mib`
+	- [x] `$env` vars and `$1` cli vars
+	- [ ] date & time literals
+- [~] Basic AST Builder
+	- [x] math & logic binary operators (most dont work in the runtime)
+	- [x] blocks of code
+	- [x] basic assignment
+	- [ ] `-Xk` and `+Xk` need to be implemented for larger & smaller
+	- [ ] compound assignment
+	- [ ] logical assignment
+	- [ ] arrays & hashmaps (they'll be the same, type)
+	- [ ] function calls
+	- [ ] function declarations
+- [ ] Basic Runtime
+	- [x] Figure out starting position (mostly works)
+	- [ ] Add in basic math for most types
+	- [ ] Cleanup how variables are accessed
+	- [ ] Support `^{}` and `${}` for begin and end blocks
+	- [ ] A way to convert to and from different types
+	- [ ] Add more supported functions
+		- [ ] Fill out the ones already in this file
+		- [ ] Addd `depth` and "amount of children in directory"
+	- [ ] Convert it to a vm
+		- [ ] add in a JIT
+- [x] Argument Parser
+	- [x] Most arguments (both currently implemented and todos) are added
+	- [ ] An option to print out matched lines in their files (a-la ripgrep)
+	- [ ] Clean it up to make it look really pretty (clap mostly does a good job)
+- [ ] Misc
+	- [ ] Optimize file reading so you dont read an entire file to math the first line
+	- [ ] cleanup type represenations
+	- [ ] maybe remove the significant bits from filesizes?
+	- [ ] Solidify when I'm using `Vec<u8>` vs `OsString` vs `String`.
+	- [ ] Figure out how to reconcile `${}` for begin blocks and `${}` for env vars
+	- [ ] should unknown variables warn?
 
 Here's some examples of things I want to eventually support
 - list all files in a directory: ``ff 'isfile && depth=1' ``
