@@ -21,6 +21,11 @@ pub enum Expression {
 }
 
 impl Expression {
+	pub fn parse_toplevel(lctx: &mut LexContext) -> Result<Self, ParseError> {
+		Ok(Self::parse(lctx, true, Precedence::default())?
+			.expect("Todo: error for no valid expression"))
+	}
+
 	pub fn parse(
 		lctx: &mut LexContext,
 		comma_is_and: bool,

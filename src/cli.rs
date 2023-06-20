@@ -12,11 +12,11 @@ use std::path::PathBuf;
 	max_term_width = 98,
 )]
 pub struct Args {
-	/// The search expression
+	/// The search expression. [default: .]
 	///
 	/// The return value of the expression will be used in determining whether the path matches.
-	#[arg(required = true, group = "input", value_name = "expression")]
-	pub expression: Option<String>, // TODO: default this to `.`
+	#[arg(group = "input", value_name = "expression")]
+	pub expression: Option<String>,
 
 	/// File to load code from; omit `<expression>`
 	///

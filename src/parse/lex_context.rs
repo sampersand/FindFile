@@ -1,4 +1,5 @@
 use crate::parse::{ParseError, Stream, Token};
+use crate::play::Program;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 
@@ -11,23 +12,23 @@ pub enum Phase {
 	BraceEscape,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug)]
 pub struct LexContext<'a> {
 	pub(super) stream: Stream<'a>,
 	phases: Vec<Phase>,
 	tokens: Vec<Token>,
 	env: HashMap<OsString, Option<OsString>>,
-	cli: Vec<OsString>,
+	program: &'a mut Program,
 }
 
 impl<'a> LexContext<'a> {
-	pub fn new<T: AsRef<[u8]> + ?Sized + 'a>(source: &'a T) -> Self {
+	pub fn new<T: AsRef<[u8]> + ?Sized + 'a>(source: &'a T, program: &'a mut Program) -> Self {
 		Self {
 			stream: Stream::new(source.as_ref()),
 			phases: Vec::with_capacity(2), // sensible defaults
 			tokens: Vec::with_capacity(2),
 			env: Default::default(),
-			cli: std::env::args_os().skip(1).collect(),
+			program,
 		}
 	}
 
@@ -35,9 +36,9 @@ impl<'a> LexContext<'a> {
 		let pos = if let Ok(pos) = usize::try_from(pos) {
 			pos
 		} else {
-			usize::try_from((self.cli.len() as isize) - pos).ok()?
+			usize::try_from((self.program.cli().len() as isize) - pos).ok()?
 		};
-		self.cli.get(pos).map(|x| &**x)
+		self.program.cli().get(pos).map(|x| &**x)
 	}
 
 	pub fn get_env<'b>(&'b mut self, name: &OsStr) -> Option<&'b OsStr> {
