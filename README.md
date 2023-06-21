@@ -12,6 +12,7 @@ The syntax is (mostly) figured out, but the internals and implementations of the
 	- [x] filesize literals: `12kb`, `4.9mib`
 	- [x] `$env` vars and `$1` cli vars
 	- [ ] date & time literals
+	- [ ] have `+` in path literals start at the search root, not always at pwd root.
 - [~] Basic AST Builder
 	- [x] math & logic binary operators (most dont work in the runtime)
 	- [x] blocks of code

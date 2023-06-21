@@ -49,6 +49,7 @@ impl Program {
 	fn _play<T: AsRef<Path> + ?Sized>(&mut self, expr: &Expression, start: &T) -> PlayResult<usize> {
 		let mut num_matches = 0;
 
+		// TODO: yield the starting position too.
 		for entry in std::fs::read_dir(start.as_ref())? {
 			let mut ctx = PlayContext::new(self, entry?)?;
 			let matched = expr.run(&mut ctx, RunContext::Logical).map_or(false, |x| x.is_truthy());

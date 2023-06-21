@@ -70,7 +70,9 @@ impl PathGlob {
 			.collect::<Result<_, _>>()?;
 
 		let is_dir = source.as_os_str().to_string_lossy().bytes().last()
-			== Some(std::path::MAIN_SEPARATOR as u8);
+			== Some(std::path::MAIN_SEPARATOR as u8)
+			|| [b"~".as_ref(), b".".as_ref(), b"..".as_ref()]
+				.contains(&source.as_os_str().to_raw_bytes().as_ref());
 		Ok(Self { start, parts, is_dir })
 	}
 
@@ -92,27 +94,29 @@ impl PathGlob {
 		// 	return match_globbed_parts(self.parts[1], self.parts.
 		// }
 
-		match_globbed_dirs(&self.parts, &components.map(Component::as_os_str).collect::<Vec<_>>())
-	}
-}
-
-fn match_globbed_dirs(parts: &[PathPart], components: &[&OsStr]) -> bool {
-	if parts.is_empty() || components.is_empty() {
-		return parts.is_empty(); // && components.is_empty();
+		self
+			.match_globbed_dirs(&self.parts, &components.map(Component::as_os_str).collect::<Vec<_>>())
 	}
 
-	match parts[0] {
-		PathPart::Normal(ref os) => {
-			components[0] == os && match_globbed_dirs(&parts[1..], &components[1..])
+	fn match_globbed_dirs(&self, parts: &[PathPart], components: &[&OsStr]) -> bool {
+		if parts.is_empty() || components.is_empty() {
+			// if we've exhausted our parts, and we're a dir, then it's a match
+			return parts.is_empty() && (components.is_empty() || self.is_dir);
 		}
-		PathPart::Globbed(ref glob) => {
-			match_globbed_parts(glob, &components[0].to_raw_bytes())
-				&& match_globbed_dirs(&parts[1..], &components[1..])
+
+		match parts[0] {
+			PathPart::Normal(ref os) => {
+				components[0] == os && self.match_globbed_dirs(&parts[1..], &components[1..])
+			}
+			PathPart::Globbed(ref glob) => {
+				match_globbed_parts(glob, &components[0].to_raw_bytes())
+					&& self.match_globbed_dirs(&parts[1..], &components[1..])
+			}
+			PathPart::AnyDirs => (0..components.len())
+				.rev()
+				.map(|i| &components[i..])
+				.any(|rest| self.match_globbed_dirs(&parts[1..], rest)),
 		}
-		PathPart::AnyDirs => (0..components.len())
-			.rev()
-			.map(|i| &components[i..])
-			.any(|rest| match_globbed_dirs(&parts[1..], rest)),
 	}
 }
 
