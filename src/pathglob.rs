@@ -106,7 +106,7 @@ fn match_globbed_dirs(parts: &[PathPart], components: &[&OsStr]) -> bool {
 			components[0] == os && match_globbed_dirs(&parts[1..], &components[1..])
 		}
 		PathPart::Globbed(ref glob) => {
-			match_globbed_parts(&glob, &components[0].to_raw_bytes())
+			match_globbed_parts(glob, &components[0].to_raw_bytes())
 				&& match_globbed_dirs(&parts[1..], &components[1..])
 		}
 		PathPart::AnyDirs => (0..components.len())
@@ -232,7 +232,8 @@ fn match_globbed_parts(parts: &[Glob], given: &[u8]) -> bool {
 		Glob::Range(ref range) => given.split_first().map_or(false, |(chr, rest)| {
 			range.is_match(*chr as char) && match_globbed_parts(&parts[1..], rest)
 		}),
-		Glob::ZeroOrMore => (0..given.len())
+		Glob::ZeroOrMore if parts.len() == 1 => true, // ie if it's the last one.
+		Glob::ZeroOrMore => (0..=given.len())
 			.rev()
 			.map(|i| &given[i..])
 			.any(|rest| match_globbed_parts(&parts[1..], rest)),
