@@ -89,7 +89,7 @@ pub struct Args {
 	pub jobs: Option<usize>,
 
 	/// Which errors to ignore when running code.
-	#[arg(short = 'e', long, value_enum, value_name = "errs")]
+	#[arg(short = 'e', long, value_enum, value_name = "ERRS")]
 	pub ignored_errors: Vec<IgnoreErrors>,
 
 	/// When to prompt for dangerous actions.
@@ -127,13 +127,11 @@ pub struct Args {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum IgnoreErrors {
-	/// Ignore errors relating to traversing files (ie permission errors). Also includes getting contents
-	/// of contents we're traversing.
-	// #[value(name = "perms", aliases=["permissions", "p"])]
-	#[value(alias = "t")]
-	Traversal,
+	/// Ignore permission errors for when interacting with dirs & files.
+	#[value(aliases = ["p", "perms"])]
+	Permission,
 
-	/// Any os error that's not covered by Traversal.
+	/// Any os error that's not covered by permission.
 	Os,
 
 	/// If ignored, the stderr from subcommands is closed.

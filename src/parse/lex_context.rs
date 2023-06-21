@@ -33,12 +33,14 @@ impl<'a> LexContext<'a> {
 	}
 
 	pub fn get_cli(&self, pos: isize) -> Option<&OsStr> {
+		assert_ne!(pos, 0, "$0 doesnt exist rn");
+
 		let pos = if let Ok(pos) = usize::try_from(pos) {
 			pos
 		} else {
-			usize::try_from((self.program.cli().len() as isize) - pos).ok()?
+			usize::try_from((self.program.env().cli_len() as isize) - pos).ok()?
 		};
-		self.program.cli().get(pos).map(|x| &**x)
+		self.program.env().get_cli(pos)
 	}
 
 	pub fn get_env<'b>(&'b mut self, name: &OsStr) -> Option<&'b OsStr> {

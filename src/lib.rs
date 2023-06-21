@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 pub mod ast;
+pub mod cli;
 pub mod filesize;
 pub mod parse;
 pub mod pathglob;

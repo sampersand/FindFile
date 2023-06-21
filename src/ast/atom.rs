@@ -42,6 +42,7 @@ impl Atom {
 				interpolated.tail.insert(0, b'*');
 				interpolated.tail.insert(0, b'*');
 				interpolated.tail.insert(0, b'/');
+				interpolated.tail.insert(0, b'.');
 			}
 			PathGlob::parse(std::path::Path::new(&OsStr::assert_from_raw_bytes(&interpolated.tail)))
 				.map(Value::PathGlob)
@@ -86,7 +87,7 @@ impl Atom {
 		}
 		let mut args = Vec::new();
 
-		while let Some(expr) = Expression::parse(lctx, false, Precedence::Any)? {
+		while let Some(expr) = Expression::parse(lctx, false, Precedence::default())? {
 			args.push(expr);
 			if !lctx.take_if(Token::Comma)? {
 				break;

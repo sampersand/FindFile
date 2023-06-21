@@ -1,5 +1,6 @@
 use crate::ast::Expression;
 use crate::play::context::FileInfo;
+use crate::play::Env;
 use crate::play::PlayError;
 use crate::play::RunContext;
 use crate::play::{PlayContext, PlayResult};
@@ -11,18 +12,18 @@ use std::path::Path;
 use std::path::PathBuf;
 
 mod config;
-pub use config::{Config, When};
+pub use config::Config;
 
 #[derive(Default, Debug)]
 pub struct Program {
 	config: Config,
-	// env: HashMap<OsString, Option<OsString>>,
+	env: Env,
 	vars: HashMap<String, Value>,
 }
 
 impl Program {
-	pub fn new(config: Config) -> Self {
-		Self { config, vars: Default::default() }
+	pub fn new(config: Config, env: Env) -> Self {
+		Self { config, env, vars: Default::default() }
 	}
 
 	pub fn assign_var(&mut self, name: &str, value: Value) {
@@ -33,20 +34,16 @@ impl Program {
 		self.vars.get(name).cloned()
 	}
 
-	pub fn cli(&self) -> &[std::ffi::OsString] {
-		&self.config.cli
+	pub fn config(&self) -> &Config {
+		&self.config
+	}
+
+	pub fn env(&self) -> &Env {
+		&self.env
 	}
 
 	pub fn run_file(&mut self, path: &Path) -> PlayResult<()> {
 		self.play_expr(&std::fs::read_to_string(path)?)
-	}
-
-	fn line_ending(&self) -> u8 {
-		if self.config.print0 {
-			b'\0'
-		} else {
-			b'\n'
-		}
 	}
 
 	fn _play<T: AsRef<Path> + ?Sized>(&mut self, expr: &Expression, start: &T) -> PlayResult<usize> {
@@ -54,34 +51,27 @@ impl Program {
 
 		for entry in std::fs::read_dir(start.as_ref())? {
 			let mut ctx = PlayContext::new(self, entry?)?;
-			let matched =
-				dbg!(expr.run(&mut ctx, RunContext::Logical)).map_or(false, |x| x.is_truthy());
+			let matched = expr.run(&mut ctx, RunContext::Logical).map_or(false, |x| x.is_truthy());
 			let fileinfo = ctx.file_info;
 
 			// Invert `matched` if given the `!` flag.
-			let matched = if self.config.invert { !matched } else { matched };
+			let matched = if self.config.is_inverted() { !matched } else { matched };
 
 			if matched {
 				num_matches += 1;
 			}
 
-			if matched && !self.config.dont_print {
+			if matched && self.config.should_print() {
 				let mut stdout = std::io::stdout().lock();
-				stdout.write_all(&fileinfo.path.as_ref().as_os_str().to_raw_bytes());
-				stdout.write(&[self.line_ending()]);
+				stdout.write_all(&fileinfo.path.as_ref().as_os_str().to_raw_bytes())?;
+				self.config.write_line_ending(stdout)?;
 			}
 
 			if fileinfo.file_type.is_dir() {
-				let FileInfo { path, .. } = fileinfo;
-
-				// todo: ignore_errors_subcommand
+				let path = fileinfo.path;
 				match self._play(expr, &path) {
-					Ok(amnt) => num_matches += amnt,
-					Err(PlayError::Io(_)) if self.config.ignore_errors_os => {}
-					Err(PlayError::Io(err))
-						if self.config.ignore_errors_traversal
-							&& err.kind() == IoErrorKind::PermissionDenied => {} // if let Err(err) = self._play(expr, &path) {
-					Err(other) => return Err(other),
+					Ok(match_count) => num_matches += match_count,
+					Err(err) => self.config.handle_error(err)?,
 				}
 			}
 		}
@@ -106,11 +96,10 @@ impl Program {
 			num_matches += self._play(expr, &start)?;
 		}
 
-		if self.config.count {
+		if self.config.is_counting() {
 			println!("{num_matches}");
 		}
 
 		Ok(())
 	}
 }
-// ::fs::read_dir

@@ -1,5 +1,6 @@
 use crate::parse::Token;
 
+/// Order of operations precedence. The lower it is, the less tight the binding is.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Precedence {
 	MulDivMod,
@@ -8,8 +9,9 @@ pub enum Precedence {
 	ShortCircuit,
 	Assignment,
 	Comma,
+
 	#[default]
-	Any,
+	TopLevel,
 }
 
 impl Precedence {

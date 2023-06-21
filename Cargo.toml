@@ -24,3 +24,4 @@ os_str_bytes = "6.5"
 home = "0.5.5"
 clap = { version = "4.3.4", features = ["derive", "wrap_help"] }
 num_cpus = "1.15"
+atty = "0.2.14"

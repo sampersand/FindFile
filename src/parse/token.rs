@@ -177,7 +177,6 @@ impl<'a> Stream<'a> {
 			// `0b` is a byte literal, so `0b<DIGIT>` is required for binary literal
 			Some(b'b' | b'B') if self.peek().map_or(false, |c| c.is_ascii_digit()) => 2,
 			Some(b'b' | b'B') => {
-				dbg!(self.peek());
 				self.untake();
 				self.untake();
 				return Ok(None);
