@@ -68,6 +68,7 @@ impl Program {
 			}
 
 			if fileinfo.file_type.is_dir() {
+				// ensure we take it so the rest of the `fileinfo` struct can be dropped
 				let path = fileinfo.path;
 				match self._play(expr, &path) {
 					Ok(match_count) => num_matches += match_count,

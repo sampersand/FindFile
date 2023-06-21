@@ -17,20 +17,16 @@ pub struct Config {
 }
 
 fn check_for_unimplemented_features(args: &crate::cli::Args) {
-	if args.stable {
-		unimplemented!("unimplemented option: stable");
+	macro_rules! check {
+		($($t:ident)*) => {$(
+			if args.$t != Default::default() {
+				unimplemented!("unimplemented option: {}", stringify!($t));
+			}
+		)*};
 	}
-	if args.jobs.is_some() {
-		unimplemented!("unimplemented option: jobs");
-	}
+	check!(stable jobs prompt interactive force color);
 	if args.ignored_errors.contains(&crate::cli::IgnoreErrors::Subcommand) {
 		unimplemented!("unimplemented option: ignore subcommands");
-	}
-	if args.prompt != Default::default() {
-		unimplemented!("unimplemented option: prompt");
-	}
-	if args.color != Default::default() {
-		unimplemented!("unimplemented option: color");
 	}
 }
 
