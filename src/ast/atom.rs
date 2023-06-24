@@ -13,6 +13,7 @@ pub use interpolated::Interpolated;
 pub enum Atom {
 	Not(Box<Self>),
 	Negate(Box<Self>),
+	UPositive(Box<Self>),
 	Block(Block),
 	ForcedLogical(Box<Self>),
 
@@ -119,6 +120,10 @@ impl Atom {
 				Self::parse(lctx)?.ok_or(ParseError::NotAndEndOfExpression)?,
 			)))),
 
+			Some(Token::Add) => Ok(Some(Self::UPositive(Box::new(
+				Self::parse(lctx)?.ok_or(ParseError::NotAndEndOfExpression)?,
+			)))),
+
 			Some(Token::LeftParen) => Ok(Some(
 				Self::Block(Block::parse_until(lctx, Token::RightParen)?)
 					.parse_fncall_if_given(lctx)?,
@@ -151,6 +156,18 @@ impl Atom {
 			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContext::Logical),
 			(Self::Not(atom), _) => {
 				atom.run(ctx, RunContext::Logical).map(|x| (!x.is_truthy()).into())
+			}
+			(Self::Negate(atom), RunContext::Logical)
+				if matches!(&**atom, Self::Value(Value::FileSize(_))) =>
+			{
+				let Self::Value(Value::FileSize(fs)) = **atom else { unreachable!() };
+				Ok((ctx.size() < fs).into())
+			}
+			(Self::UPositive(atom), RunContext::Logical)
+				if matches!(&**atom, Self::Value(Value::FileSize(_))) =>
+			{
+				let Self::Value(Value::FileSize(fs)) = **atom else { unreachable!() };
+				Ok((ctx.size() > fs).into())
 			}
 			(Self::Variable(var), _) => ctx.lookup_var(var),
 			(Self::Block(block), _) => block.run(ctx, rctx),
