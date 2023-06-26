@@ -1,6 +1,6 @@
 [package]
 name = "findfile"
-version = "0.2.6"
+version = "0.2.7"
 edition = "2021"
 authors = ["Sam Westerman", "sam <at-sign> sampersand.me"]
 description = "An ergonomic way to search for files"
@@ -22,6 +22,6 @@ codegen-units = 1
 fancy-regex = "0.11"
 os_str_bytes = "6.5"
 home = "0.5.5"
-clap = { version = "4.3.4", features = ["derive", "wrap_help"] }
 num_cpus = "1.15"
 atty = "0.2.14"
+clap = { version = "4.3.4", features = ["color", "derive", "wrap_help"] }

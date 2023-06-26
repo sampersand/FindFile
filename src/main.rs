@@ -7,7 +7,7 @@ use findfile::cli::{Args, Colour, IgnoreErrors, Prompt};
 use findfile::parse::LexContext;
 use findfile::play::program::{Config, Program};
 use findfile::play::Env;
-use findfile::play::PlayResult;
+use findfile::play::{PlayError, PlayResult};
 use findfile::PathRegex;
 use std::process::ExitCode;
 
@@ -23,6 +23,22 @@ fn main() -> ExitCode {
 
 fn _main() -> PlayResult<ExitCode> {
 	let mut args = Args::parse();
+	let source = if let Some(ref file) = args.file {
+		std::fs::read_to_string(file)?
+	} else {
+		let mut expr = std::mem::take(&mut args.expression).unwrap_or_else(|| ".".into());
+		while expr.ends_with(',') {
+			if args.args.is_empty() {
+				return Err(PlayError::Other("`,` at the end of an expression"));
+			}
+
+			expr.push_str(
+				&args.args.remove(0).into_string().expect("todo: error for cli arg not a string"),
+			);
+		}
+		expr
+	};
+
 	let env = Env::new(std::mem::take(&mut args.args));
 
 	let mut program = Program::new(Config::from(&args), env);
@@ -31,12 +47,6 @@ fn _main() -> PlayResult<ExitCode> {
 	for imported_file in args.import {
 		program.run_file(&imported_file)?;
 	}
-
-	let source = if let Some(file) = args.file {
-		std::fs::read_to_string(&file)?
-	} else {
-		args.expression.unwrap_or_else(|| ".".into())
-	};
 
 	program.play_expr(&source)?;
 	return Ok(ExitCode::SUCCESS);

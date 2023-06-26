@@ -5,6 +5,7 @@ use std::io;
 pub enum PlayError {
 	Io(io::Error),
 	CannotParse(ParseError),
+	Other(&'static str),
 }
 
 pub type PlayResult<T> = Result<T, PlayError>;

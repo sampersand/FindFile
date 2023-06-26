@@ -15,7 +15,7 @@ pub struct Args {
 	/// The search expression. [default: .]
 	///
 	/// The return value of the expression will be used in determining whether the path matches.
-	#[arg(group = "input", value_name = "expression")]
+	#[arg(group = "input", value_name = "expression", allow_hyphen_values = true)]
 	pub expression: Option<String>,
 
 	/// File to load code from; omit `<expression>`
