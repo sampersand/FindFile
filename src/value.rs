@@ -1,14 +1,16 @@
-use crate::play::PlayContext;
-use crate::play::PlayResult;
-use crate::play::RunContext;
+use crate::play::{PlayContext, PlayResult, RunContext};
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+mod assoc_array;
+pub use assoc_array::AssocArray;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+	AssocArray(AssocArray),
 	Text(Rc<[u8]>),
 	Number(f64),
 	Path(Rc<Path>),

@@ -29,6 +29,7 @@ impl Suffix {
 	// note: modern computers can't handle anything larger than an exabyte.
 	pub const MAX_EXPONENT: u32 = 6;
 
+	/// Converts the suffix to its string representation.
 	pub const fn to_str(self) -> &'static str {
 		match self {
 			Self::None => "B",
