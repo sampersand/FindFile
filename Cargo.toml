@@ -1,6 +1,6 @@
 [package]
 name = "findfile"
-version = "0.2.7"
+version = "0.2."
 edition = "2021"
 authors = ["Sam Westerman", "sam <at-sign> sampersand.me"]
 description = "An ergonomic way to search for files"

@@ -8,19 +8,16 @@ pub use suffix::Suffix;
 // a filesize is larger than 4,503,599,627,370,495 bytes (4.5 quadrillion, ie 4.5e15) it doesn't
 // really matter.
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct FileSize {
-	bytes: u64,
-	precision: Option<u8>,
-}
+pub struct FileSize(u64);
 
 impl FileSize {
-	pub fn new(amount: f64, suffix: Suffix, precision: Option<u8>) -> Option<Self> {
+	pub fn new(amount: f64, suffix: Suffix) -> Option<Self> {
 		let integer = (amount * (suffix as u64 as f64)) as u64;
 
-		assert!(
-			integer == 0 || 10u64.checked_pow(precision.unwrap_or(0) as _).unwrap() <= integer,
-			"Todo: check for precision"
-		);
+		// assert!(
+		// 	integer == 0 || 10u64.checked_pow(precision.unwrap_or(0) as _).unwrap() <= integer,
+		// 	"Todo: check for precision"
+		// );
 		/* n.ilog10()-p >= 2?  */
 
 		// dbg!(integer as u64 as f64, integer, integer as u64);
@@ -28,32 +25,25 @@ impl FileSize {
 		// 	return None;
 		// }
 
-		Some(Self::from_bytes(integer, precision))
+		Some(Self::from_bytes(integer))
 	}
 
-	pub const fn from_bytes(num: u64, precision: Option<u8>) -> Self {
-		Self { bytes: num, precision }
+	pub const fn from_bytes(bytes: u64) -> Self {
+		Self(bytes)
 	}
 
 	pub const fn bytes(self) -> u64 {
-		self.bytes
-	}
-
-	pub const fn precision(self) -> Option<u8> {
-		self.precision
+		self.0
 	}
 
 	pub const fn mul(self, rhs: u64) -> Self {
-		Self::from_bytes(self.bytes() * rhs, self.precision)
+		Self::from_bytes(self.bytes() * rhs)
 	}
 
-	pub fn fuzzy_matches(self, tomatch: Self) -> bool {
+	pub fn fuzzy_matches(self, tomatch: Self, precision: u8) -> bool {
 		if self.bytes() < 10 {
 			return self == tomatch;
 		}
-		let Some(precision) = self.precision else {
-			return self == tomatch;
-		};
 
 		let bytes = self.bytes();
 		let offset = 10u64.pow(bytes.ilog10() - (precision as u32) - 1);

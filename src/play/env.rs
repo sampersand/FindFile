@@ -9,6 +9,7 @@ pub struct Env {
 }
 
 impl Env {
+	/// Creates a new [`Env`] with the given command line arguments
 	pub fn new(cli: Vec<OsString>) -> Self {
 		Self { cli }
 	}
@@ -25,7 +26,7 @@ impl Env {
 
 	// Here's a fun little secret: It's actually more performant (when I tested) to fetch from the
 	// environment each time than to store it in a hashmap!
-	pub fn get_env(&self, name: &OsStr) -> Option<impl std::ops::Deref<Target = OsStr>> {
+	pub fn get_env(&self, name: &OsStr) -> Option<OsString> {
 		std::env::var_os(name)
 	}
 }

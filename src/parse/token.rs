@@ -39,7 +39,7 @@ pub enum Token {
 	Variable(String),
 	Number(f64),
 	DateTime(crate::DateTime),
-	FileSize(crate::FileSize),
+	FileSize { fs: crate::FileSize, precision: u8 },
 
 	// Begin / end pairs
 	BeginPath,
@@ -198,7 +198,7 @@ impl<'a> Stream<'a> {
 		u64::from_str_radix(&buf, radix).map(Some).or(Err(ParseError::BadFloat))
 	}
 
-	fn parse_float(&mut self) -> Result<(f64, Option<u8>), ParseError> {
+	fn parse_float(&mut self) -> Result<(f64, u8), ParseError> {
 		let mut buf = String::new();
 
 		self.parse_number_sign(&mut buf);
@@ -220,9 +220,9 @@ impl<'a> Stream<'a> {
 				return Err(ParseError::BadFloat);
 			}
 
-			Some(buf.bytes().rev().take_while(|&x| x == b'0').count() as u8)
+			buf.bytes().rev().take_while(|&x| x == b'0').count() as u8
 		} else {
-			Some(0)
+			0
 		};
 
 		// Parse out the exponent, if it's given.
@@ -474,7 +474,7 @@ impl Token {
 		let (num, precision) = if let Some(integer) = lctx.stream.parse_base_integer()? {
 			(integer as f64, None)
 		} else {
-			lctx.stream.parse_float()?
+			lctx.stream.parse_float().map(|(x, y)| (x, Some(y)))?
 		};
 
 		let suffix = lctx.stream.take_while(|c| c.is_ascii_alphabetic());
@@ -483,9 +483,10 @@ impl Token {
 		};
 
 		if let Some(suffix) = Suffix::from_bytes(suffix) {
-			return Ok(Self::FileSize(
-				FileSize::new(num, suffix, precision).ok_or(ParseError::FileSizeLiteralTooLarge)?,
-			));
+			return Ok(Self::FileSize {
+				fs: FileSize::new(num, suffix).ok_or(ParseError::FileSizeLiteralTooLarge)?,
+				precision: precision.unwrap_or(0),
+			});
 		}
 		todo!()
 	}

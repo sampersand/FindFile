@@ -15,7 +15,7 @@ pub enum Value {
 	Number(f64),
 	Path(Rc<Path>),
 	PathGlob(PathGlob),
-	FileSize(FileSize),
+	FileSize { fs: FileSize, precision: u8 },
 	Regex(Regex),
 }
 
@@ -23,10 +23,6 @@ impl Default for Value {
 	fn default() -> Self {
 		Self::Text(vec![].into())
 	}
-}
-
-fn slice_contains(haystack: &[u8], needle: &[u8]) -> bool {
-	haystack.windows(needle.len()).any(|c| c == needle)
 }
 
 impl Value {
@@ -40,9 +36,11 @@ impl Value {
 
 	pub fn matches(&self, rhs: &Self) -> PlayResult<bool> {
 		match (self, rhs) {
-			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.fuzzy_matches(*rhs)),
+			(Self::FileSize { fs: lhs, precision }, Self::FileSize { fs: rhs, .. }) => {
+				Ok(lhs.fuzzy_matches(*rhs, *precision))
+			}
 			(Self::Regex(regex), Self::Text(rhs)) => Ok(regex.is_match(&rhs)),
-			(Self::Text(needle), Self::Text(haystack)) => Ok(slice_contains(haystack, needle)),
+			(Self::Text(needle), Self::Text(haystack)) => Ok(crate::slice_contains(haystack, needle)),
 			(Self::PathGlob(glob), Self::Path(path)) => Ok(glob.is_match(&path)),
 			(Self::PathGlob(glob), Self::Text(path)) => {
 				Ok(glob.is_match(std::path::Path::new(&OsStr::assert_from_raw_bytes(path.as_ref()))))
@@ -54,11 +52,16 @@ impl Value {
 	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Self> {
 		match (self, rctx) {
 			(Self::Text(s), RunContext::Logical) => {
-				Ok({ ctx.is_file() && slice_contains(&ctx.contents()?, &s) }.into())
+				Ok((ctx.is_file() && ctx.info_mut().contents_contains(&s)?).into())
 			}
-			(Self::FileSize(size), RunContext::Logical) => Ok(size.fuzzy_matches(ctx.size()).into()),
+			(Self::FileSize { fs, precision }, RunContext::Logical) => {
+				Ok(fs.fuzzy_matches(ctx.info().content_size(), *precision).into())
+			}
+
 			(Self::Regex(regex), RunContext::Logical) => Ok(regex.is_match(&ctx.contents()?).into()),
-			(Self::PathGlob(glob), RunContext::Logical) => Ok(glob.is_match(&ctx.path()).into()),
+			(Self::PathGlob(glob), RunContext::Logical) => {
+				Ok(glob.is_match(&ctx.info().path()).into())
+			}
 
 			(_, RunContext::Any) => Ok(self.clone()),
 			(Self::Number(x), RunContext::Logical) => Ok((*x != 0.0).into()),
@@ -95,7 +98,7 @@ impl Value {
 			(Self::Number(lhs), Self::Number(rhs)) => {
 				Ok(lhs.partial_cmp(&rhs).expect("todo: handle NaN <=> NaN"))
 			}
-			(Self::FileSize(lhs), Self::FileSize(rhs)) => Ok(lhs.cmp(&rhs)),
+			(Self::FileSize { fs: lhs, .. }, Self::FileSize { fs: rhs, .. }) => Ok(lhs.cmp(&rhs)),
 			_ => todo!("{:?} {:?}", self, rhs),
 		}
 	}
@@ -113,7 +116,7 @@ impl From<bool> for Value {
 
 impl From<FileSize> for Value {
 	fn from(size: FileSize) -> Self {
-		Self::FileSize(size)
+		Self::FileSize { fs: size, precision: 0 }
 	}
 }
 

@@ -20,9 +20,6 @@ use std::ffi::{OsStr, OsString};
 use std::ops::RangeInclusive;
 use std::path::{Component, Path, PathBuf};
 
-// ff a/b
-// ff ./a/b
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathGlob {
 	start: PathBuf,
@@ -69,10 +66,17 @@ impl PathGlob {
 			.map(|comp| PathPart::parse(comp.as_os_str()))
 			.collect::<Result<_, _>>()?;
 
-		let is_dir = source.as_os_str().to_string_lossy().bytes().last()
+		let mut is_dir = source.as_os_str().to_string_lossy().bytes().last()
 			== Some(std::path::MAIN_SEPARATOR as u8)
 			|| [b"~".as_ref(), b".".as_ref(), b"..".as_ref()]
 				.contains(&source.as_os_str().to_raw_bytes().as_ref());
+
+		// if !is_dir {
+		// 	if let Ok(metadata) = std::fs::metadata(source) {
+		// 		is_dir = metadata.is_dir();
+		// 	}
+		// }
+
 		Ok(Self { start, parts, is_dir })
 	}
 
@@ -89,7 +93,7 @@ impl PathGlob {
 			return false;
 		}
 
-		// optimizationf or `**/foo.txt`
+		// optimization for `**/foo.txt`
 		// if self.parts[0] == PathPart::AnyDirs && self.parts.len() == 2 {
 		// 	return match_globbed_parts(self.parts[1], self.parts.
 		// }

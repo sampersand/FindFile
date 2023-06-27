@@ -36,7 +36,7 @@ impl<'a> LexContext<'a> {
 		assert_ne!(pos, 0, "$0 doesnt exist rn");
 
 		let pos = if let Ok(pos) = usize::try_from(pos) {
-			pos
+			pos - 1
 		} else {
 			usize::try_from((self.program.env().cli_len() as isize) - pos).ok()?
 		};

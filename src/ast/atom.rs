@@ -130,7 +130,9 @@ impl Atom {
 			)),
 			Some(Token::Variable(var)) => Ok(Some(Self::Variable(var).parse_fncall_if_given(lctx)?)),
 			Some(Token::Number(num)) => Ok(Some(Self::Value(Value::Number(num)))),
-			Some(Token::FileSize(fs)) => Ok(Some(Self::Value(Value::FileSize(fs)))),
+			Some(Token::FileSize { fs, precision }) => {
+				Ok(Some(Self::Value(Value::FileSize { fs, precision })))
+			}
 			Some(Token::DateTime(dt)) => Ok(Some(Self::Value(todo!() /*Value::DateTime(dt)*/))),
 			Some(Token::CliArg(pos)) => {
 				let cli = lctx.get_cli(pos).ok_or(ParseError::InvalidCliPosition(pos))?;
@@ -158,16 +160,16 @@ impl Atom {
 				atom.run(ctx, RunContext::Logical).map(|x| (!x.is_truthy()).into())
 			}
 			(Self::Negate(atom), RunContext::Logical)
-				if matches!(&**atom, Self::Value(Value::FileSize(_))) =>
+				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
 			{
-				let Self::Value(Value::FileSize(fs)) = **atom else { unreachable!() };
-				Ok((ctx.size() < fs).into())
+				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
+				Ok((ctx.info().content_size() < fs).into())
 			}
 			(Self::UPositive(atom), RunContext::Logical)
-				if matches!(&**atom, Self::Value(Value::FileSize(_))) =>
+				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
 			{
-				let Self::Value(Value::FileSize(fs)) = **atom else { unreachable!() };
-				Ok((ctx.size() > fs).into())
+				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
+				Ok((ctx.info().content_size() > fs).into())
 			}
 			(Self::Variable(var), _) => ctx.lookup_var(var),
 			(Self::Block(block), _) => block.run(ctx, rctx),

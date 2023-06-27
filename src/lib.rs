@@ -19,3 +19,7 @@ pub struct DateTime;
 pub use pathglob::PathGlob;
 
 pub use filesize::FileSize;
+
+fn slice_contains(haystack: &[u8], needle: &[u8]) -> bool {
+	haystack.windows(needle.len()).any(|c| c == needle)
+}
