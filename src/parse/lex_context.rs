@@ -74,6 +74,14 @@ impl<'a> LexContext<'a> {
 		self.tokens.push(token);
 	}
 
+	pub fn take_ident(&mut self) -> Result<Option<String>, ParseError> {
+		match self.take_if_fn(|tkn| matches!(tkn, Token::Variable(_)))? {
+			Some(Token::Variable(name)) => Ok(Some(name)),
+			Some(_) => unreachable!(),
+			None => Ok(None),
+		}
+	}
+
 	pub fn take_if_fn(
 		&mut self,
 		cond: impl FnOnce(&Token) -> bool,

@@ -41,6 +41,20 @@ pub enum Token {
 	DateTime(crate::DateTime),
 	FileSize { fs: crate::FileSize, precision: u8 },
 
+	// Keywords
+	If,
+	Do,
+	Else,
+	Elif,
+	While,
+	For,
+	Break,
+	Continue,
+	Return,
+	Fn,
+	True,
+	False,
+
 	// Begin / end pairs
 	BeginPath,
 	EndPath,
@@ -654,6 +668,20 @@ impl Token {
 					b"mul" => ifeq!(MultiplyAssign, Multiply),
 					b"div" => ifeq!(DivideAssign, Divide),
 					b"mod" => ifeq!(ModuloAssign, Modulo),
+
+					b"if" => Ok(Some(Self::If)),
+					b"do" => Ok(Some(Self::Do)),
+					b"elif" => Ok(Some(Self::Elif)),
+					b"else" => Ok(Some(Self::Else)),
+					b"while" => Ok(Some(Self::While)),
+					b"for" => Ok(Some(Self::For)),
+					b"break" => Ok(Some(Self::Break)),
+					b"continue" => Ok(Some(Self::Continue)),
+					b"return" => Ok(Some(Self::Return)),
+					b"fn" => Ok(Some(Self::Fn)),
+					b"true" => Ok(Some(Self::True)),
+					b"false" => Ok(Some(Self::False)),
+
 					_ => Ok(Some(Self::Variable(
 						String::from_utf8(buf.to_owned()).or(Err(ParseError::VariableIsntUtf8))?,
 					))),

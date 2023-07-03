@@ -1,5 +1,6 @@
 use crate::ast::Block;
 use crate::parse::{LexContext, ParseError, Token};
+use crate::vm::{Builder, Opcode};
 use os_str_bytes::OsStrBytes;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +22,12 @@ impl End for Token {
 impl<F: Fn(&Token) -> bool> End for F {
 	fn matches(&self, token: &Token) -> bool {
 		self(token)
+	}
+}
+
+impl Interpolated {
+	pub fn compile(self, builder: &mut Builder) -> usize {
+		todo!()
 	}
 }
 

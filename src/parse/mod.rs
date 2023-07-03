@@ -12,6 +12,7 @@ pub enum ParseError {
 	VariableIsntUtf8,
 	UnknownTokenStart(char),
 	BadEscape(&'static str),
+	Message(&'static str),
 	InvalidEscape(char),
 	CliArgTooLarge,
 	InvalidDollarSign,
@@ -31,6 +32,7 @@ pub enum ParseError {
 	CliArgMissing,
 	AssignToNonVariable,
 	InvalidRegex(crate::regex::RegexParseError),
+	InvalidFunctionCall { name: String, argc: usize },
 }
 
 impl From<crate::regex::RegexParseError> for ParseError {

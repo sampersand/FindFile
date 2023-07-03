@@ -1,6 +1,7 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::vm::{Builder, Opcode};
 use crate::Regex;
 use crate::{DateTime, FileSize, PathGlob, Value};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
@@ -20,7 +21,6 @@ pub enum Atom {
 	InterpolatedPath(Interpolated),
 	InterpolatedString(Interpolated),
 	InterpolatedRegex(Interpolated, RegexFlags),
-	Regex(OsString, RegexFlags), // todo: actual regex
 
 	Value(Value),
 	Variable(String),
@@ -142,6 +142,8 @@ impl Atom {
 				let env = lctx.get_env(&var).ok_or(ParseError::MissingEnvVar(var))?;
 				Ok(Some(Self::Value(Value::Text(env.to_raw_bytes().into_owned().into()))))
 			}
+			Some(Token::True) => Ok(Some(Self::Value(true.into()))),
+			Some(Token::False) => Ok(Some(Self::Value(false.into()))),
 
 			Some(other) => {
 				lctx.push_token(other);
@@ -194,25 +196,68 @@ impl Atom {
 	// 	}
 	// }
 }
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum Atom {
-// 	Not(Box<Self>),
-// 	Negate(Box<Self>),
-// 	Block(Block),
 
-// 	InterpolatedPath(crate::parse::token::BeginPathKind, Interpolated),
-// 	Path(PathGlob),
+impl Atom {
+	fn compile(self, builder: &mut Builder) -> Result<(), ParseError> {
+		match self {
+			Self::Not(atom) => {
+				atom.compile(builder);
+				builder.opcode(Opcode::Not);
+			}
+			Self::Negate(atom) => {
+				atom.compile(builder);
+				builder.opcode(Opcode::Negate);
+			}
+			Self::UPositive(atom) => {
+				atom.compile(builder);
+				builder.opcode(Opcode::UPositive);
+			}
+			Self::Block(_block) => todo!(),
+			Self::ForcedLogical(atom) => {
+				atom.compile(builder);
+				builder.opcode(Opcode::ForcedLogical);
+			}
 
-// 	InterpolatedString(Interpolated),
-// 	String(OsString),
+			Self::InterpolatedPath(interpolated) => {
+				let amount = interpolated.compile(builder);
+				builder.opcode(Opcode::CreatePath(amount));
+			}
+			Self::InterpolatedString(interpolated) => {
+				let amount = interpolated.compile(builder);
+				builder.opcode(Opcode::CreateString(amount));
+			}
+			Self::InterpolatedRegex(interpolated, _flags) => {
+				let amount = interpolated.compile(builder);
+				builder.opcode(Opcode::CreateRegex(amount));
+				panic!("todo: flags");
+			}
 
-// 	InterpolatedRegex(Interpolated, RegexFlags),
-// 	Regex(OsString, RegexFlags), // todo: actual regex
+			Self::Value(value) => builder.load_constant(value),
+			Self::Variable(variable) => {
+				// only builtin functions can be called without parens.
+				if !Opcode::compile_fn_call(&variable, 0, builder) {
+					builder.load_variable(&variable);
+				}
+			}
 
-// 	Variable(OsString),
-// 	Number(f64),
-// 	DateTime(DateTime),
-// 	FileSize(FileSize),
+			Self::FnCall(func, args) => {
+				let arglen = args.len();
+				for arg in args {
+					arg.compile(builder);
+				}
 
-// 	FnCall(Box<Self>, Vec<Expression>), // note that only variables and blocks are the first arg.
-// }
+				if let Self::Variable(name) = *func {
+					if !Opcode::compile_fn_call(&name, arglen, builder) {
+						builder.load_variable(&name);
+						builder.opcode(Opcode::GenericCall(arglen));
+					}
+				} else {
+					func.compile(builder);
+					builder.opcode(Opcode::GenericCall(arglen));
+				}
+			}
+		}
+
+		Ok(())
+	}
+}

@@ -1,4 +1,4 @@
-use crate::ast::{Atom, LogicOperator, MathOperator, Precedence};
+use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContext};
 use crate::Value;
@@ -18,6 +18,13 @@ pub enum Expression {
 	Assignment(String, Option<MathOperator>, Box<Self>),
 	ShortCircuitAssignment(String, ShortCircuit, Box<Self>),
 	ShortCircuit(ShortCircuit, Box<Self>, Box<Self>),
+
+	If(Vec<(Self, Self)>, Option<Box<Self>>),
+	While(Box<Self>, Box<Self>),
+	Break,
+	Continue,
+	Return(Option<Box<Self>>),
+	FnDecl(Option<String>, Vec<String>, Box<Self>),
 }
 
 impl Expression {
@@ -26,14 +33,104 @@ impl Expression {
 			.expect("Todo: error for no valid expression"))
 	}
 
+	fn parse_single(lctx: &mut LexContext, msg: &'static str) -> Result<Self, ParseError> {
+		Self::parse(lctx, true, Precedence::default())?.ok_or(ParseError::Message(msg))
+	}
+
+	fn parse_statement(lctx: &mut LexContext) -> Result<Option<Self>, ParseError> {
+		const STATEMENT_BEGIN: [Token; 6] =
+			[Token::If, Token::While, Token::Continue, Token::Break, Token::Return, Token::Fn];
+
+		let Some(token) = lctx.take_if_fn(|x| STATEMENT_BEGIN.contains(&x))? else {
+			return Ok(None);
+		};
+
+		match token {
+			Token::If => {
+				let cond = Self::parse_single(lctx, "missing condition for if")?;
+				if !lctx.take_if(Token::Do)? {
+					return Err(ParseError::Message("expected `do` after `if` condition"));
+				}
+
+				let body = Self::parse_single(lctx, "missing body for if")?;
+
+				let mut conds = vec![(cond, body)];
+				while lctx.take_if(Token::Elif)? {
+					let elif_cond = Self::parse_single(lctx, "missing condition for elif")?;
+					if !lctx.take_if(Token::Do)? {
+						return Err(ParseError::Message("expected `do` after `elif` condition"));
+					}
+
+					conds.push((elif_cond, Self::parse_single(lctx, "missing body for elif")?));
+				}
+
+				let else_body = if lctx.take_if(Token::Else)? {
+					Some(Self::parse_single(lctx, "missing body for else")?)
+				} else {
+					None
+				};
+
+				Ok(Some(Self::If(conds, else_body.map(From::from))))
+			}
+
+			Token::While => {
+				let cond = Self::parse_single(lctx, "missing condition for while")?;
+				if !lctx.take_if(Token::Do)? {
+					return Err(ParseError::Message("expected `do` after `while` condition"));
+				}
+
+				let body = Self::parse_single(lctx, "missing body for while")?;
+
+				Ok(Some(Self::While(cond.into(), body.into())))
+			}
+
+			Token::Continue => Ok(Some(Self::Continue)),
+			Token::Break => Ok(Some(Self::Break)),
+			Token::Return => Ok(Some(Self::Return(
+				Self::parse(lctx, true, Precedence::default())?.map(From::from),
+			))),
+
+			Token::Fn => {
+				let name = lctx.take_ident()?;
+
+				if !lctx.take_if(Token::LeftParen)? {
+					return Err(ParseError::Message("expected `(` after fn name"));
+				}
+
+				let mut args = Vec::new();
+				while !lctx.take_if(Token::RightParen)? {
+					let ident =
+						lctx.take_ident()?.ok_or(ParseError::Message("expected variable name"))?;
+					args.push(ident);
+					if !lctx.take_if(Token::Comma)? {
+						if !lctx.take_if(Token::RightParen)? {
+							return Err(ParseError::Message("expected `,` or `)` after variable"));
+						}
+						break;
+					}
+				}
+
+				let body = Self::parse_single(lctx, "missing body for fn")?;
+
+				Ok(Some(Self::FnDecl(name, args, body.into())))
+			}
+			_ => unreachable!(),
+		}
+	}
+
 	pub fn parse(
 		lctx: &mut LexContext,
 		comma_is_and: bool,
 		prec: Precedence,
 	) -> Result<Option<Self>, ParseError> {
+		if let Some(statement) = Self::parse_statement(lctx)? {
+			return Ok(Some(statement));
+		}
+
 		let Some(begin) = Atom::parse(lctx)? else {
 			return Ok(None);
 		};
+
 		let mut lhs = Self::Atom(begin);
 
 		while let Some(token) = lctx.next()? {
@@ -161,15 +258,9 @@ impl Expression {
 	}
 }
 
-// #[derive(Debug, Clone, PartialEq)]
-// pub enum Expression {
-// 	Atom(Atom),
-// 	Math(MathOperator, Box<Self>, Box<Self>),
-// 	Logic(LogicOperator, Box<Self>, Box<Self>),
-// 	Assignment(String, Option<MathOperator>, Box<Self>),
-// 	And(Box<Self>, Box<Self>),
-// 	Or(Box<Self>, Box<Self>),
-// }
+impl Expression {
+	pub fn compile(self, builder: &mut crate::vm::Builder) {}
+}
 
 impl Expression {
 	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
@@ -212,14 +303,28 @@ impl Expression {
 				} else {
 					Ok(lhs)
 				}
-			} // Self::Or(lhs, rhs) => {
-			  // 	let lhs = lhs.run(ctx, RunContext::Logical)?;
-			  // 	if lhs.is_truthy() {
-			  // 		Ok(lhs)
-			  // 	} else {
-			  // 		rhs.run(ctx, RunContext::Logical)
-			  // 	}
-			  // }
+			}
+
+			Self::If(conds, else_body) => {
+				for (cond, body) in conds.iter() {
+					if cond.run(ctx, RunContext::Logical)?.is_truthy() {
+						return body.run(ctx, rctx);
+					}
+				}
+				if let Some(e) = else_body {
+					e.run(ctx, rctx)
+				} else {
+					Ok(Value::default())
+				}
+			}
+
+			// If(Box<Self>, Box<Self>, Vec<(Self, Self)>, Option<Box<Self>>),
+			// While(Box<Self>, Box<Self>),
+			// Break,
+			// Continue,
+			Self::Return(thing) => Ok(dbg!(thing.as_ref().unwrap().run(ctx, rctx)?)),
+			// FnDecl(String, Vec<String>, Box<Self>),
+			_ => todo!(),
 		}
 	}
 
