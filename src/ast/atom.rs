@@ -1,6 +1,7 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::play::{PlayContext, PlayResult, RunContextOld};
+use crate::vm::block::RunContext;
 use crate::vm::{Builder, Opcode};
 use crate::Regex;
 use crate::{DateTime, FileSize, PathGlob, Value};
@@ -155,19 +156,19 @@ impl Atom {
 }
 
 impl Atom {
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Value> {
 		match (self, rctx) {
-			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContext::Logical),
+			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContextOld::Logical),
 			(Self::Not(atom), _) => {
-				atom.run(ctx, RunContext::Logical).map(|x| (!x.is_truthy()).into())
+				atom.run(ctx, RunContextOld::Logical).map(|x| (!x.is_truthy()).into())
 			}
-			(Self::Negate(atom), RunContext::Logical)
+			(Self::Negate(atom), RunContextOld::Logical)
 				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
 			{
 				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
 				Ok((ctx.info().content_size() < fs).into())
 			}
-			(Self::UPositive(atom), RunContext::Logical)
+			(Self::UPositive(atom), RunContextOld::Logical)
 				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
 			{
 				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
@@ -198,23 +199,23 @@ impl Atom {
 }
 
 impl Atom {
-	fn compile(self, builder: &mut Builder) -> Result<(), ParseError> {
+	pub fn compile(self, builder: &mut Builder, ctx: RunContext) -> Result<(), ParseError> {
 		match self {
 			Self::Not(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, RunContext::Logical);
 				builder.opcode(Opcode::Not);
 			}
 			Self::Negate(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, RunContext::Normal);
 				builder.opcode(Opcode::Negate);
 			}
 			Self::UPositive(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, RunContext::Normal);
 				builder.opcode(Opcode::UPositive);
 			}
 			Self::Block(_block) => todo!(),
 			Self::ForcedLogical(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, RunContext::Logical);
 				builder.opcode(Opcode::ForcedLogical);
 			}
 
@@ -232,29 +233,41 @@ impl Atom {
 				panic!("todo: flags");
 			}
 
-			Self::Value(value) => builder.load_constant(value),
+			Self::Value(value) => {
+				builder.load_constant(value);
+
+				if ctx == RunContext::Logical {
+					builder.opcode(Opcode::Logical);
+				}
+			}
+
 			Self::Variable(variable) => {
 				// only builtin functions can be called without parens.
 				if !Opcode::compile_fn_call(&variable, 0, builder) {
 					builder.load_variable(&variable);
+				}
+
+				if ctx == RunContext::Logical {
+					builder.opcode(Opcode::Logical);
 				}
 			}
 
 			Self::FnCall(func, args) => {
 				let arglen = args.len();
 				for arg in args {
-					arg.compile(builder);
+					arg.compile(builder, ctc);
 				}
 
 				if let Self::Variable(name) = *func {
 					if !Opcode::compile_fn_call(&name, arglen, builder) {
 						builder.load_variable(&name);
 						builder.opcode(Opcode::GenericCall(arglen));
+						return Ok(());
 					}
-				} else {
-					func.compile(builder);
-					builder.opcode(Opcode::GenericCall(arglen));
 				}
+
+				func.compile(builder, RunContext::Normal);
+				builder.opcode(Opcode::GenericCall(arglen));
 			}
 		}
 

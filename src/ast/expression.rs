@@ -1,6 +1,8 @@
 use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::play::{PlayContext, PlayResult, RunContextOld};
+use crate::vm::block::{Builder, RunContext};
+use crate::vm::Opcode;
 use crate::Value;
 use std::path::PathBuf;
 
@@ -8,6 +10,7 @@ use std::path::PathBuf;
 pub enum ShortCircuit {
 	And,
 	Or,
+	Defined,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -259,25 +262,21 @@ impl Expression {
 }
 
 impl Expression {
-	pub fn compile(self, builder: &mut crate::vm::Builder) {}
-}
-
-impl Expression {
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Value> {
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Value> {
 		match self {
 			Self::Atom(atom) => atom.run(ctx, rctx),
 			Self::Math(op, lhs, rhs) => {
-				op.run(&lhs.run(ctx, RunContext::Any)?, &rhs.run(ctx, RunContext::Any)?)
+				op.run(&lhs.run(ctx, RunContextOld::Any)?, &rhs.run(ctx, RunContextOld::Any)?)
 			}
 			Self::Logic(op, lhs, rhs) => op
-				.run(&lhs.run(ctx, RunContext::Any)?, &rhs.run(ctx, RunContext::Any)?)
+				.run(&lhs.run(ctx, RunContextOld::Any)?, &rhs.run(ctx, RunContextOld::Any)?)
 				.map(Value::from),
 			Self::Assignment(name, op, rhs) => {
 				let value = if let Some(op) = op {
 					let old = ctx.lookup_var(name)?;
-					op.run(&old, &rhs.run(ctx, RunContext::Any)?)?
+					op.run(&old, &rhs.run(ctx, RunContextOld::Any)?)?
 				} else {
-					rhs.run(ctx, RunContext::Any)?
+					rhs.run(ctx, RunContextOld::Any)?
 				};
 
 				ctx.assign_var(name, value.clone());
@@ -287,9 +286,9 @@ impl Expression {
 				todo!()
 				// let value = if let Some(op) = op {
 				// 	let old = ctx.lookup_var(name);
-				// 	op.run(&old, &rhs.run(ctx, RunContext::Any)?)?
+				// 	op.run(&old, &rhs.run(ctx, RunContextOld::Any)?)?
 				// } else {
-				// 	rhs.run(ctx, RunContext::Any)?
+				// 	rhs.run(ctx, RunContextOld::Any)?
 				// };
 
 				// ctx.assign_var(name, value.clone());
@@ -297,9 +296,9 @@ impl Expression {
 			}
 
 			Self::ShortCircuit(sc, lhs, rhs) => {
-				let lhs = lhs.run(ctx, RunContext::Logical)?;
+				let lhs = lhs.run(ctx, RunContextOld::Logical)?;
 				if lhs.is_truthy() == (*sc == ShortCircuit::And) {
-					rhs.run(ctx, RunContext::Logical)
+					rhs.run(ctx, RunContextOld::Logical)
 				} else {
 					Ok(lhs)
 				}
@@ -307,7 +306,7 @@ impl Expression {
 
 			Self::If(conds, else_body) => {
 				for (cond, body) in conds.iter() {
-					if cond.run(ctx, RunContext::Logical)?.is_truthy() {
+					if cond.run(ctx, RunContextOld::Logical)?.is_truthy() {
 						return body.run(ctx, rctx);
 					}
 				}
@@ -327,13 +326,111 @@ impl Expression {
 			_ => todo!(),
 		}
 	}
+}
 
-	// pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
-	// 	match self {
-	// 		Self::Atom(atom) => atom.matches(ctx, lctx),
-	// 		Self::And(lhs, rhs) => Ok(lhs.matches(ctx, lctx)? && rhs.matches(ctx, lctx)?),
-	// 		Self::Or(lhs, rhs) => Ok(lhs.matches(ctx, lctx)? || rhs.matches(ctx, lctx)?),
-	// 		_ => todo!(),
-	// 	}
-	// }
+impl Expression {
+	pub fn compile(self, builder: &mut Builder, ctx: RunContext) -> Result<(), ParseError> {
+		match self {
+			Self::Atom(atom) => atom.compile(builder, ctx),
+			Self::Math(mop, lhs, rhs) => {
+				lhs.compile(builder, RunContext::Normal)?;
+				rhs.compile(builder, RunContext::Normal)?;
+				mop.compile(builder);
+				Ok(())
+			}
+			Self::Logic(lop, lhs, rhs) => {
+				lhs.compile(builder, RunContext::Normal)?;
+				rhs.compile(builder, RunContext::Normal)?;
+				lop.compile(builder);
+				Ok(())
+			}
+			Self::Assignment(name, None, value) => {
+				value.compile(builder, ctx)?;
+				builder.store_variable(&name);
+				Ok(())
+			}
+			Self::Assignment(name, Some(op), value) => {
+				builder.load_variable(&name);
+				value.compile(builder, RunContext::Normal)?;
+				op.compile(builder);
+				builder.store_variable(&name);
+				Ok(())
+			}
+			Self::ShortCircuitAssignment(name, cond, value) => {
+				todo!(); // todo: `Defined`
+			}
+
+			Self::ShortCircuit(cond, lhs, rhs) => {
+				lhs.compile(builder, RunContext::Logical)?; // todo: should this just be ctx?
+				builder.opcode(Opcode::Dup);
+				let end_jump = builder.defer_jump();
+				builder.opcode(Opcode::Pop);
+				rhs.compile(builder, RunContext::Logical)?;
+				match cond {
+					ShortCircuit::Or => end_jump.jump_if(builder),
+					ShortCircuit::And => end_jump.jump_unless(builder),
+					ShortCircuit::Defined => todo!(),
+				}
+				Ok(())
+			}
+
+			Self::If(conds, else_body) => {
+				let mut deferred_jumps = Vec::with_capacity(conds.len());
+				let mut to_next: Option<crate::vm::block::JumpIndex> = None;
+
+				for (cond, body) in conds {
+					if let Some(prev) = to_next {
+						prev.jump_unless(builder);
+					}
+
+					cond.compile(builder, RunContext::Logical)?;
+					to_next = Some(builder.defer_jump());
+					body.compile(builder, ctx)?;
+					deferred_jumps.push(builder.defer_jump());
+				}
+
+				to_next.unwrap().jump_unless(builder);
+
+				if let Some(eb) = else_body {
+					let jump_to_end = builder.defer_jump();
+					eb.compile(builder, ctx)?;
+					jump_to_end.jump_unconditional(builder);
+				}
+
+				for deferred_jump in deferred_jumps {
+					deferred_jump.jump_unconditional(builder);
+				}
+
+				Ok(())
+			}
+
+			Self::While(cond, body) => {
+				let token = builder.enter_loop();
+				let start = builder.position();
+
+				cond.compile(builder)?;
+				let jump_to_end = builder.defer_jump();
+				body.compile(builder)?;
+				builder.jump_unconditional(start);
+				jump_to_end.jump_unless(builder);
+
+				builder.exit_loop(token);
+				Ok(())
+			}
+
+			Self::Break => builder.jump_to_loop_end(),
+			Self::Continue => builder.jump_to_loop_start(),
+			Self::Return(result) => {
+				if let Some(result) = result {
+					result.compile(builder)?;
+				} else {
+					builder.load_constant(Value::default());
+				}
+
+				builder.opcode(Opcode::Return);
+				Ok(())
+			}
+			Self::FnDecl(name, args, body) => todo!(),
+		}
+	}
 }

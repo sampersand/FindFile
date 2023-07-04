@@ -1,4 +1,4 @@
-use crate::play::{PlayContext, PlayResult, RunContext};
+use crate::play::{PlayContext, PlayResult, RunContextOld};
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use std::ffi::OsStr;
@@ -49,22 +49,24 @@ impl Value {
 		}
 	}
 
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContext) -> PlayResult<Self> {
+	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Self> {
 		match (self, rctx) {
-			(Self::Text(s), RunContext::Logical) => {
+			(Self::Text(s), RunContextOld::Logical) => {
 				Ok((ctx.is_file() && ctx.info_mut().contents_contains(&s)?).into())
 			}
-			(Self::FileSize { fs, precision }, RunContext::Logical) => {
+			(Self::FileSize { fs, precision }, RunContextOld::Logical) => {
 				Ok(fs.fuzzy_matches(ctx.info().content_size(), *precision).into())
 			}
 
-			(Self::Regex(regex), RunContext::Logical) => Ok(regex.is_match(&ctx.contents()?).into()),
-			(Self::PathGlob(glob), RunContext::Logical) => {
+			(Self::Regex(regex), RunContextOld::Logical) => {
+				Ok(regex.is_match(&ctx.contents()?).into())
+			}
+			(Self::PathGlob(glob), RunContextOld::Logical) => {
 				Ok(glob.is_match(&ctx.info().path()).into())
 			}
 
-			(_, RunContext::Any) => Ok(self.clone()),
-			(Self::Number(x), RunContext::Logical) => Ok((*x != 0.0).into()),
+			(_, RunContextOld::Any) => Ok(self.clone()),
+			(Self::Number(x), RunContextOld::Logical) => Ok((*x != 0.0).into()),
 			_ => todo!(),
 		}
 	}

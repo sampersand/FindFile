@@ -1,5 +1,7 @@
 use crate::parse::Token;
 use crate::play::PlayResult;
+use crate::vm::Builder;
+use crate::vm::Opcode;
 use crate::Value;
 use std::cmp::Ordering;
 
@@ -47,6 +49,19 @@ impl LogicOperator {
 			Token::GreaterThan => Some(Self::GreaterThan),
 			Token::GreaterThanOrEqual => Some(Self::GreaterThanOrEqual),
 			_ => None,
+		}
+	}
+
+	pub fn compile(self, builder: &mut Builder) {
+		match self {
+			Self::Matches => builder.opcode(Opcode::Matches),
+			Self::NotMatches => builder.opcode(Opcode::NotMatches),
+			Self::Equal => builder.opcode(Opcode::Equal),
+			Self::NotEqual => builder.opcode(Opcode::NotEqual),
+			Self::LessThan => builder.opcode(Opcode::LessThan),
+			Self::LessThanOrEqual => builder.opcode(Opcode::LessThanOrEqual),
+			Self::GreaterThan => builder.opcode(Opcode::GreaterThan),
+			Self::GreaterThanOrEqual => builder.opcode(Opcode::GreaterThanOrEqual),
 		}
 	}
 }

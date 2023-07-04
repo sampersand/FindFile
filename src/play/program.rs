@@ -2,7 +2,7 @@ use crate::ast::Expression;
 use crate::play::Env;
 use crate::play::PathInfo;
 use crate::play::PlayError;
-use crate::play::RunContext;
+use crate::play::RunContextOld;
 use crate::play::{PlayContext, PlayResult};
 use crate::Value;
 use os_str_bytes::OsStrBytes;
@@ -65,7 +65,7 @@ impl Program {
 
 	fn handle(&mut self, name: PathBuf, expr: &Expression) -> PlayResult<usize> {
 		let mut ctx = PlayContext::new(self, name)?;
-		let matched = expr.run(&mut ctx, RunContext::Logical).map_or(false, |x| x.is_truthy());
+		let matched = expr.run(&mut ctx, RunContextOld::Logical).map_or(false, |x| x.is_truthy());
 		let pathinfo = ctx.into_pathinfo();
 
 		// Invert `matched` if given the `!` flag.

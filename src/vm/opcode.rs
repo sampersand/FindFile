@@ -2,15 +2,28 @@ use crate::vm::Builder;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Opcode {
+	Illegal,
 	LoadConstant(usize),
 	LoadArgument(usize),
 	LoadVariable(usize),
+	StoreArgument(usize),
+	StoreVariable(usize),
+
+	Dup,
+	Pop,
+
+	Logical,
 
 	GenericCall(usize),
 
 	CreatePath(usize),
 	CreateRegex(usize),
 	CreateString(usize),
+
+	Return,
+	Jump(usize),
+	JumpIf(usize),
+	JumpUnless(usize),
 
 	Not,
 	Negate,
@@ -21,6 +34,16 @@ pub enum Opcode {
 	Subtract,
 	Multiply,
 	Divide,
+	Modulo,
+
+	Matches,
+	NotMatches,
+	Equal,
+	NotEqual,
+	LessThan,
+	LessThanOrEqual,
+	GreaterThan,
+	GreaterThanOrEqual,
 
 	// Querying
 	IsFile { implicit: bool },

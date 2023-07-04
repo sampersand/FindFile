@@ -12,8 +12,8 @@ pub use pathinfo::PathInfo;
 pub use program::Program;
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunContext {
+pub enum RunContextOld {
 	Logical,
 	#[default]
-	Any,
+	Any, // todo: rename to normal
 }

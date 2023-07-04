@@ -1,6 +1,8 @@
 use crate::ast::Precedence;
 use crate::parse::Token;
 use crate::play::PlayResult;
+use crate::vm::Builder;
+use crate::vm::Opcode;
 use crate::Value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +45,16 @@ impl MathOperator {
 			Token::Modulo => Some((Self::Modulo, false)),
 			Token::ModuloAssign => Some((Self::Modulo, true)),
 			_ => None,
+		}
+	}
+
+	pub fn compile(self, builder: &mut Builder) {
+		match self {
+			Self::Add => builder.opcode(Opcode::Add),
+			Self::Subtract => builder.opcode(Opcode::Subtract),
+			Self::Multiply => builder.opcode(Opcode::Multiply),
+			Self::Divide => builder.opcode(Opcode::Divide),
+			Self::Modulo => builder.opcode(Opcode::Modulo),
 		}
 	}
 }
