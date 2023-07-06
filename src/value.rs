@@ -1,4 +1,6 @@
 use crate::play::{PlayContext, PlayResult, RunContextOld};
+use crate::vm::RunResult;
+use crate::vm::Vm;
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use std::ffi::OsStr;
@@ -26,11 +28,32 @@ impl Default for Value {
 }
 
 impl Value {
-	pub fn is_truthy(&self) -> bool {
+	pub fn is_truthy_old(&self) -> bool {
 		match self {
 			Self::Text(v) => !v.is_empty(),
 			Self::Number(v) => *v != 0.0,
-			_ => todo!(),
+			_ => todo!("{:?}", self),
+		}
+	}
+
+	pub fn is_truthy(&self, vm: &mut Vm) -> RunResult<bool> {
+		match self {
+			Self::Text(v) => Ok(!v.is_empty()),
+			Self::Number(v) => Ok(*v != 0.0),
+			Self::AssocArray(ary) => Ok(!ary.is_empty()),
+			Self::Path(path) => todo!(),
+			Self::PathGlob(glob) => Ok(glob.is_match(&vm.info().path())),
+			Self::FileSize { fs, precision } => {
+				Ok(fs.fuzzy_matches(vm.info().content_size(), *precision))
+			}
+			Self::Regex(regex) => Ok(regex.is_match(&vm.info_mut().contents()?)),
+		}
+	}
+
+	pub fn logical(&self, vm: &mut Vm) -> RunResult<bool> {
+		match self {
+			Self::Text(v) => Ok(crate::slice_contains(&vm.info_mut().contents()?, v)),
+			other => self.is_truthy(vm),
 		}
 	}
 
@@ -71,31 +94,31 @@ impl Value {
 		}
 	}
 
-	pub fn negate(&self) -> PlayResult<Self> {
+	pub fn negate(&self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn add(&self, rhs: &Self) -> PlayResult<Self> {
+	pub fn add(&self, rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn subtract(&self, rhs: &Self) -> PlayResult<Self> {
+	pub fn subtract(&self, rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn multiply(&self, rhs: &Self) -> PlayResult<Self> {
+	pub fn multiply(&self, rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn divide(&self, rhs: &Self) -> PlayResult<Self> {
+	pub fn divide(&self, rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn modulo(&self, rhs: &Self) -> PlayResult<Self> {
+	pub fn modulo(&self, rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn compare(&self, rhs: &Self) -> PlayResult<std::cmp::Ordering> {
+	pub fn compare(&self, rhs: &Self) -> RunResult<std::cmp::Ordering> {
 		match (self, rhs) {
 			(Self::Number(lhs), Self::Number(rhs)) => {
 				Ok(lhs.partial_cmp(&rhs).expect("todo: handle NaN <=> NaN"))
@@ -103,6 +126,10 @@ impl Value {
 			(Self::FileSize { fs: lhs, .. }, Self::FileSize { fs: rhs, .. }) => Ok(lhs.cmp(&rhs)),
 			_ => todo!("{:?} {:?}", self, rhs),
 		}
+	}
+
+	pub fn call(&self, args: &[Self]) -> RunResult<Self> {
+		todo!();
 	}
 }
 

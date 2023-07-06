@@ -53,20 +53,32 @@ impl Program {
 		self.play(&expr)
 	}
 
-	fn _play<T: AsRef<Path> + ?Sized>(&mut self, expr: &Expression, start: &T) -> PlayResult<usize> {
+	fn _play<T: AsRef<Path> + ?Sized>(
+		&mut self,
+		vm: &mut crate::vm::Vm,
+		block: &crate::vm::Block,
+		start: &T,
+	) -> PlayResult<usize> {
 		let mut num_matches = 0;
 
 		for entry in std::fs::read_dir(start.as_ref())? {
-			num_matches += self.handle(entry?.path(), expr)?;
+			num_matches += self.handle(entry?.path(), vm, block)?;
 		}
 
 		Ok(num_matches)
 	}
 
-	fn handle(&mut self, name: PathBuf, expr: &Expression) -> PlayResult<usize> {
+	fn handle(
+		&mut self,
+		name: PathBuf,
+		vm: &mut crate::vm::Vm,
+		block: &crate::vm::Block,
+	) -> PlayResult<usize> {
 		let mut ctx = PlayContext::new(self, name)?;
-		let matched = expr.run(&mut ctx, RunContextOld::Logical).map_or(false, |x| x.is_truthy());
 		let pathinfo = ctx.into_pathinfo();
+		vm.set_pathinfo(pathinfo.clone());
+		let matched = block.run(vm).map_or(Ok(false), |x| x.is_truthy(vm))?;
+		// let matched = expr.run(&mut ctx, RunContextOld::Logical).map_or(false, |x| x.is_truthy_old());
 
 		// Invert `matched` if given the `!` flag.
 		let matched = if self.config.is_inverted() { !matched } else { matched };
@@ -86,7 +98,7 @@ impl Program {
 			// ensure we take it so the rest of the `pathinfo` struct can be dropped
 			let path = pathinfo.path().clone();
 			drop(pathinfo);
-			match self._play(expr, &path) {
+			match self._play(vm, block, &path) {
 				Ok(match_count) => num_matches += match_count,
 				Err(err) => self.config.handle_error(err)?,
 			}
@@ -101,10 +113,13 @@ impl Program {
 			x => x,
 		};
 
+		let (mut vm, block) =
+			crate::vm::Vm::compile(Default::default(), expr.clone()).expect("bad expr");
+
 		let mut num_matches = 0;
 		for start in start_positions {
-			num_matches += self.handle(start.clone(), expr)?;
-			num_matches += self._play(expr, &start)?;
+			num_matches += self.handle(start.clone(), &mut vm, &block)?;
+			num_matches += self._play(&mut vm, &block, &start)?;
 		}
 
 		if self.config.is_counting() {

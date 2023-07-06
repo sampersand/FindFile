@@ -4,14 +4,14 @@ use std::io;
 use std::path::Path;
 use std::rc::Rc;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PathInfo {
 	path: Rc<Path>,
 	contents: FileContents,
 	metadata: Metadata,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileContents {
 	contents: Option<Rc<[u8]>>,
 }

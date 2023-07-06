@@ -23,11 +23,11 @@ impl MathOperator {
 
 	pub fn run(self, lhs: &Value, rhs: &Value) -> PlayResult<Value> {
 		match self {
-			Self::Add => lhs.add(rhs),
-			Self::Subtract => lhs.subtract(rhs),
-			Self::Multiply => lhs.multiply(rhs),
-			Self::Divide => lhs.divide(rhs),
-			Self::Modulo => lhs.modulo(rhs),
+			Self::Add => lhs.add(rhs).map_err(From::from),
+			Self::Subtract => lhs.subtract(rhs).map_err(From::from),
+			Self::Multiply => lhs.multiply(rhs).map_err(From::from),
+			Self::Divide => lhs.divide(rhs).map_err(From::from),
+			Self::Modulo => lhs.modulo(rhs).map_err(From::from),
 		}
 	}
 

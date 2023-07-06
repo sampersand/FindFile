@@ -1,7 +1,7 @@
 use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContextOld};
-use crate::vm::block::{Builder, RunContext};
+use crate::vm::block::Builder;
 use crate::vm::Opcode;
 use crate::Value;
 use std::path::PathBuf;
@@ -297,7 +297,7 @@ impl Expression {
 
 			Self::ShortCircuit(sc, lhs, rhs) => {
 				let lhs = lhs.run(ctx, RunContextOld::Logical)?;
-				if lhs.is_truthy() == (*sc == ShortCircuit::And) {
+				if lhs.is_truthy_old() == (*sc == ShortCircuit::And) {
 					rhs.run(ctx, RunContextOld::Logical)
 				} else {
 					Ok(lhs)
@@ -306,7 +306,7 @@ impl Expression {
 
 			Self::If(conds, else_body) => {
 				for (cond, body) in conds.iter() {
-					if cond.run(ctx, RunContextOld::Logical)?.is_truthy() {
+					if cond.run(ctx, RunContextOld::Logical)?.is_truthy_old() {
 						return body.run(ctx, rctx);
 					}
 				}
@@ -329,29 +329,29 @@ impl Expression {
 }
 
 impl Expression {
-	pub fn compile(self, builder: &mut Builder, ctx: RunContext) -> Result<(), ParseError> {
+	pub fn compile(self, builder: &mut Builder) -> Result<(), ParseError> {
 		match self {
-			Self::Atom(atom) => atom.compile(builder, ctx),
+			Self::Atom(atom) => atom.compile(builder),
 			Self::Math(mop, lhs, rhs) => {
-				lhs.compile(builder, RunContext::Normal)?;
-				rhs.compile(builder, RunContext::Normal)?;
+				lhs.compile(builder)?;
+				rhs.compile(builder)?;
 				mop.compile(builder);
 				Ok(())
 			}
 			Self::Logic(lop, lhs, rhs) => {
-				lhs.compile(builder, RunContext::Normal)?;
-				rhs.compile(builder, RunContext::Normal)?;
+				lhs.compile(builder)?;
+				rhs.compile(builder)?;
 				lop.compile(builder);
 				Ok(())
 			}
 			Self::Assignment(name, None, value) => {
-				value.compile(builder, ctx)?;
+				value.compile(builder)?;
 				builder.store_variable(&name);
 				Ok(())
 			}
 			Self::Assignment(name, Some(op), value) => {
 				builder.load_variable(&name);
-				value.compile(builder, RunContext::Normal)?;
+				value.compile(builder)?;
 				op.compile(builder);
 				builder.store_variable(&name);
 				Ok(())
@@ -361,11 +361,11 @@ impl Expression {
 			}
 
 			Self::ShortCircuit(cond, lhs, rhs) => {
-				lhs.compile(builder, RunContext::Logical)?; // todo: should this just be ctx?
+				lhs.compile(builder)?;
 				builder.opcode(Opcode::Dup);
 				let end_jump = builder.defer_jump();
 				builder.opcode(Opcode::Pop);
-				rhs.compile(builder, RunContext::Logical)?;
+				rhs.compile(builder)?;
 				match cond {
 					ShortCircuit::Or => end_jump.jump_if(builder),
 					ShortCircuit::And => end_jump.jump_unless(builder),
@@ -383,9 +383,10 @@ impl Expression {
 						prev.jump_unless(builder);
 					}
 
-					cond.compile(builder, RunContext::Logical)?;
+					cond.compile(builder)?;
+					builder.opcode(Opcode::ForcedLogical);
 					to_next = Some(builder.defer_jump());
-					body.compile(builder, ctx)?;
+					body.compile(builder)?;
 					deferred_jumps.push(builder.defer_jump());
 				}
 
@@ -393,7 +394,7 @@ impl Expression {
 
 				if let Some(eb) = else_body {
 					let jump_to_end = builder.defer_jump();
-					eb.compile(builder, ctx)?;
+					eb.compile(builder)?;
 					jump_to_end.jump_unconditional(builder);
 				}
 

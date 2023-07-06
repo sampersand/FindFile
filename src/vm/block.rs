@@ -1,13 +1,10 @@
-use crate::vm::Opcode;
+use crate::vm::{Opcode, RunError, Vm};
 use crate::Value;
+use core::cmp::Ordering;
 use std::collections::HashMap;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum RunContext {
-	Logical,
-	#[default]
-	Normal,
-}
+mod builder;
+pub use builder::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Block {
@@ -16,153 +13,155 @@ pub struct Block {
 	args: Vec<String>, // names are given for fun.
 }
 
-pub struct Builder<'a> {
-	code: Vec<Opcode>,
-	consts: Vec<Value>,
-	loops: Vec<(LoopToken, Vec<JumpIndex>)>, // (loop start, jump_to_ends)
-	arguments: Vec<String>,
-	global_vars: &'a mut HashMap<String, usize>,
+#[derive(Debug)]
+struct Stackframe<'b, 'v> {
+	block: &'b Block,
+	vm: &'v mut Vm,
+	ip: usize,
+	stack: Vec<Value>,
+	args: Vec<Value>,
 }
 
-impl<'a> Builder<'a> {
-	pub fn new<T>(args: T, global_vars: &'a mut HashMap<String, usize>) -> Self
-	where
-		T: IntoIterator<Item = String>,
-	{
-		Self {
-			code: Vec::new(),
-			loops: Vec::new(),
-			consts: Vec::new(),
-			arguments: args.into_iter().collect(),
-			global_vars,
-		}
+impl Block {
+	pub fn run(&self, vm: &mut Vm) -> Result<Value, RunError> {
+		Stackframe { block: self, vm, ip: 0, stack: Vec::new(), args: vec![] }.run()
+	}
+}
+
+impl Stackframe<'_, '_> {
+	fn jump_to(&mut self, idx: usize) {
+		debug_assert!(idx <= self.block.code.len(), "{self:?}");
+		self.ip = idx;
 	}
 
-	pub fn build(self) -> Block {
-		assert!(self.loops.is_empty());
-		Block { code: self.code, consts: self.consts, args: self.arguments }
+	fn next_opcode(&mut self) -> Option<Opcode> {
+		let &op = self.block.code.get(self.ip)?;
+		self.ip += 1;
+		Some(op)
 	}
 
-	pub fn opcode(&mut self, op: Opcode) {
-		self.code.push(op);
-	}
-
-	pub fn load_variable(&mut self, name: &str) {
-		if let Some(idx) = self.arguments.iter().position(|x| x == name) {
-			self.opcode(Opcode::LoadArgument(idx));
-			return;
-		}
-
-		let index;
-
-		if let Some(&idx) = self.global_vars.get(name) {
-			index = idx;
-		} else {
-			index = self.global_vars.len();
-			self.global_vars.insert(name.to_owned(), index);
-		};
-
-		self.opcode(Opcode::LoadVariable(index))
-	}
-
-	pub fn store_variable(&mut self, name: &str) {
-		if let Some(idx) = self.arguments.iter().position(|x| x == name) {
-			self.opcode(Opcode::StoreArgument(idx));
-			return;
-		}
-
-		let index;
-
-		if let Some(&idx) = self.global_vars.get(name) {
-			index = idx;
-		} else {
-			index = self.global_vars.len();
-			self.global_vars.insert(name.to_owned(), index);
-		};
-
-		self.opcode(Opcode::StoreVariable(index))
-	}
-
-	pub fn load_constant(&mut self, value: Value) {
-		for (idx, constant) in self.consts.iter().enumerate() {
-			if *constant == value {
-				self.opcode(Opcode::LoadConstant(idx));
-				return;
+	fn run(mut self) -> Result<Value, RunError> {
+		while let Some(opcode) = self.next_opcode() {
+			if let Some(return_value) = self.run_opcode(opcode)? {
+				return Ok(return_value);
 			}
 		}
 
-		self.opcode(Opcode::LoadConstant(self.consts.len()));
-		self.consts.push(value);
+		Ok(self.stack.pop().unwrap_or_default())
 	}
 
-	pub fn defer_jump(&mut self) -> JumpIndex {
-		let idx = self.code.len();
-		self.opcode(Opcode::Illegal);
-		JumpIndex(idx)
+	fn push(&mut self, value: Value) {
+		self.stack.push(value);
 	}
 
-	pub fn position(&mut self) -> Position {
-		Position(self.code.len())
+	fn pop(&mut self) -> Value {
+		self.stack.pop().expect("<internal error: popped from end of stack>")
 	}
 
-	pub fn jump_unconditional(&mut self, pos: Position) {
-		self.opcode(Opcode::Jump(pos.0));
-	}
+	fn run_opcode(&mut self, opcode: Opcode) -> Result<Option<Value>, RunError> {
+		use Opcode::*;
+		let mut args = (0..opcode.arity()).map(|_| self.pop()).collect::<Vec<_>>();
 
-	pub fn enter_loop(&mut self) -> LoopToken {
-		let token = LoopToken(self.code.len());
-		self.loops.push((token, vec![]));
-		token
-	}
+		let topush = match opcode {
+			Illegal => unreachable!(),
+			LoadConstant(idx) => self.block.consts[idx].clone(),
+			LoadArgument(idx) => self.args[idx].clone(),
+			LoadVariable(idx) => self.vm.get_variable(idx).unwrap_or_default(), // todo: is default correct?
+			StoreArgument(idx) => {
+				self.args[idx] = args.remove(0);
+				return Ok(None);
+			}
+			StoreVariable(idx) => {
+				self.vm.store_variable(idx, args.remove(0));
+				return Ok(None);
+			}
 
-	pub fn exit_loop(&mut self, token: LoopToken) {
-		let (top_token, jump_indices) = self.loops.pop().unwrap();
-		assert_eq!(top_token, token);
+			Dup => {
+				self.push(args[0].clone());
+				args.remove(0)
+			}
+			Pop => return Ok(None),
 
-		for jump_index in jump_indices {
-			jump_index.jump_unconditional(self);
-		}
-	}
+			GenericCall(amnt) => args[0].call(&args[1..])?,
 
-	pub fn jump_to_loop_start(&mut self) -> Result<(), crate::parse::ParseError> {
-		let Some((pos, _)) = self.loops.last() else {
-			return Err(crate::parse::ParseError::Message("continue out of loop"));
+			CreatePath(_usize) => todo!(),
+			CreateRegex(_usize) => todo!(),
+			CreateString(_usize) => todo!(),
+
+			Return => return Ok(Some(args.remove(0))),
+			Jump(position) => {
+				self.jump_to(position);
+				return Ok(None);
+			}
+			JumpIf(position) | JumpUnless(position) => {
+				if args[0].is_truthy(self.vm)? == matches!(opcode, Opcode::JumpIf(_)) {
+					self.jump_to(position);
+				}
+				return Ok(None);
+			}
+
+			Not => (!args[0].is_truthy(self.vm)?).into(),
+			Negate => todo!(),
+			UPositive => todo!(),
+			ForcedLogical => args[0].logical(self.vm)?.into(),
+
+			Add => args[0].add(&args[1])?,
+			Subtract => args[0].subtract(&args[1])?,
+			Multiply => args[0].multiply(&args[1])?,
+			Divide => args[0].divide(&args[1])?,
+			Modulo => args[0].modulo(&args[1])?,
+
+			Matches => todo!(),
+			NotMatches => todo!(),
+			Equal => (args[0].compare(&args[1])? == Ordering::Equal).into(),
+			NotEqual => (args[0].compare(&args[1])? != Ordering::Equal).into(),
+			LessThan => (args[0].compare(&args[1])? < Ordering::Equal).into(),
+			LessThanOrEqual => (args[0].compare(&args[1])? <= Ordering::Equal).into(),
+			GreaterThan => (args[0].compare(&args[1])? > Ordering::Equal).into(),
+			GreaterThanOrEqual => (args[0].compare(&args[1])? >= Ordering::Equal).into(),
+
+			// Querying
+			IsFile { implicit } => todo!(),
+			IsDirectory { implicit } => todo!(),
+			IsExecutable { implicit } => todo!(),
+			IsSymlink { implicit } => todo!(),
+			IsBinary { implicit } => todo!(),
+			IsHidden { implicit } => todo!(),
+			IsGitIgnored { implicit } => todo!(),
+			IsOk(_usize) => todo!(),
+
+			// Path-related funcitons
+			FileSize { implicit: true } => self.vm.info().content_size().into(),
+			FileSize { implicit: false } => todo!(),
+			PushRoot => todo!(),
+			PushPath => todo!(),
+			PushPwd => todo!(),
+			Dirname { implicit } => todo!(),
+			Extname { implicit } => todo!(),
+			ExtnameDot { implicit } => todo!(),
+			Basename { implicit } => todo!(),
+			Stemname { implicit } => todo!(),
+
+			// Misc
+			Print(_usize) => todo!(),
+			Write(_usize) => todo!(), // same as print just no newline at end
+			Skip => todo!(),
+			Quit { implicit } => todo!(),
+			Depth { implicit } => todo!(),
+			Sleep { implicit } => todo!(),
+
+			// Interactiv => todo!()e
+			Mv { implicit, force } => todo!(),
+			Rm { implicit, force } => todo!(),
+			RmR { implicit, force } => todo!(),
+			Cp { implicit, force } => todo!(),
+			Ln { implicit, force } => todo!(),
+			LnS { implicit, force } => todo!(),
+			Mkdir => todo!(),
+			Touch { implicit } => todo!(),
 		};
 
-		self.jump_unconditional(Position(pos.0));
-		Ok(())
-	}
-
-	pub fn jump_to_loop_end(&mut self) -> Result<(), crate::parse::ParseError> {
-		let deferred = self.defer_jump();
-		if let Some((_, jumps)) = self.loops.last_mut() {
-			jumps.push(deferred);
-			Ok(())
-		} else {
-			Err(crate::parse::ParseError::Message("break out of loop"))
-		}
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoopToken(usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Position(usize);
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct JumpIndex(usize);
-
-impl JumpIndex {
-	pub fn jump_unconditional(self, builder: &mut Builder) {
-		builder.code[self.0] = Opcode::Jump(builder.code.len());
-	}
-
-	pub fn jump_if(self, builder: &mut Builder) {
-		builder.code[self.0] = Opcode::JumpIf(builder.code.len());
-	}
-
-	pub fn jump_unless(self, builder: &mut Builder) {
-		builder.code[self.0] = Opcode::JumpUnless(builder.code.len());
+		self.push(topush);
+		Ok(None)
 	}
 }
