@@ -49,7 +49,7 @@ impl<'a> PlayContext<'a> {
 			"file?" | "f?" => Ok(self.is_file().into()),
 			"size" | "z" => Ok(self.info().content_size().into()),
 			"contents" | "c" => Ok(self.pathinfo.contents()?.into()),
-			"path" | "p" => Ok(self.pathinfo.path().clone().into()),
+			"path" | "p" => Ok(self.pathinfo.path()._rc().clone().into()),
 			_ => Ok(self.program.get_var(name).unwrap_or_default()),
 		}
 	}

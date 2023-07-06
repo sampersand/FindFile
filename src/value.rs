@@ -3,6 +3,7 @@ use crate::vm::RunResult;
 use crate::vm::Vm;
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
+use os_str_bytes::RawOsStr;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -42,7 +43,7 @@ impl Value {
 			Self::Number(v) => Ok(*v != 0.0),
 			Self::AssocArray(ary) => Ok(!ary.is_empty()),
 			Self::Path(path) => todo!(),
-			Self::PathGlob(glob) => Ok(glob.is_match(&vm.info().path())),
+			Self::PathGlob(glob) => Ok(glob.is_match(&vm.info().path()._rc())),
 			Self::FileSize { fs, precision } => {
 				Ok(fs.fuzzy_matches(vm.info().content_size(), *precision))
 			}
@@ -52,12 +53,12 @@ impl Value {
 
 	pub fn logical(&self, vm: &mut Vm) -> RunResult<bool> {
 		match self {
-			Self::Text(v) => Ok(crate::slice_contains(&vm.info_mut().contents()?, v)),
+			Self::Text(v) => Ok(vm.info_mut().contents_contains(v)?),
 			other => self.is_truthy(vm),
 		}
 	}
 
-	pub fn matches(&self, rhs: &Self) -> PlayResult<bool> {
+	pub fn matches(&self, rhs: &Self) -> RunResult<bool> {
 		match (self, rhs) {
 			(Self::FileSize { fs: lhs, precision }, Self::FileSize { fs: rhs, .. }) => {
 				Ok(lhs.fuzzy_matches(*rhs, *precision))
@@ -85,7 +86,7 @@ impl Value {
 				Ok(regex.is_match(&ctx.contents()?).into())
 			}
 			(Self::PathGlob(glob), RunContextOld::Logical) => {
-				Ok(glob.is_match(&ctx.info().path()).into())
+				Ok(glob.is_match(&ctx.info().path()._rc()).into())
 			}
 
 			(_, RunContextOld::Any) => Ok(self.clone()),
@@ -124,6 +125,7 @@ impl Value {
 				Ok(lhs.partial_cmp(&rhs).expect("todo: handle NaN <=> NaN"))
 			}
 			(Self::FileSize { fs: lhs, .. }, Self::FileSize { fs: rhs, .. }) => Ok(lhs.cmp(&rhs)),
+			(Self::Text(lhs), Self::Text(rhs)) => Ok(lhs.cmp(rhs)),
 			_ => todo!("{:?} {:?}", self, rhs),
 		}
 	}
@@ -158,5 +160,23 @@ impl From<Rc<[u8]>> for Value {
 impl From<Rc<Path>> for Value {
 	fn from(path: Rc<Path>) -> Self {
 		Self::Path(path)
+	}
+}
+
+impl From<&Path> for Value {
+	fn from(path: &Path) -> Self {
+		Self::Path(Rc::from(path.to_owned()))
+	}
+}
+
+impl From<&OsStr> for Value {
+	fn from(osstr: &OsStr) -> Self {
+		Self::Text(osstr.to_raw_bytes().to_owned().into())
+	}
+}
+
+impl From<&RawOsStr> for Value {
+	fn from(osstr: &RawOsStr) -> Self {
+		Self::Text(osstr.as_raw_bytes().to_owned().into())
 	}
 }

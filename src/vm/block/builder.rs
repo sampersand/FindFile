@@ -3,6 +3,13 @@ use crate::vm::Opcode;
 use crate::Value;
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuildContext {
+	TopLevel,
+	Logical,
+	Normal,
+}
+
 pub struct Builder<'a> {
 	code: Vec<Opcode>,
 	consts: Vec<Value>,

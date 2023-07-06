@@ -1,7 +1,7 @@
 use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContextOld};
-use crate::vm::block::Builder;
+use crate::vm::block::{BuildContext, Builder};
 use crate::vm::Opcode;
 use crate::Value;
 use std::path::PathBuf;
@@ -329,43 +329,57 @@ impl Expression {
 }
 
 impl Expression {
-	pub fn compile(self, builder: &mut Builder) -> Result<(), ParseError> {
+	pub fn compile(self, builder: &mut Builder, ctx: BuildContext) -> Result<(), ParseError> {
 		match self {
-			Self::Atom(atom) => atom.compile(builder),
+			Self::Atom(atom) => atom.compile(builder, ctx),
 			Self::Math(mop, lhs, rhs) => {
-				lhs.compile(builder)?;
-				rhs.compile(builder)?;
+				lhs.compile(builder, BuildContext::Normal)?;
+				rhs.compile(builder, BuildContext::Normal)?;
 				mop.compile(builder);
 				Ok(())
 			}
 			Self::Logic(lop, lhs, rhs) => {
-				lhs.compile(builder)?;
-				rhs.compile(builder)?;
+				lhs.compile(builder, BuildContext::Normal)?;
+				rhs.compile(builder, BuildContext::Normal)?;
 				lop.compile(builder);
 				Ok(())
 			}
 			Self::Assignment(name, None, value) => {
-				value.compile(builder)?;
+				// `foo = "a"` should not use `a` as logical at toplevel.
+				value.compile(
+					builder,
+					if ctx == BuildContext::Logical { ctx } else { BuildContext::Normal },
+				)?;
 				builder.store_variable(&name);
 				Ok(())
 			}
 			Self::Assignment(name, Some(op), value) => {
 				builder.load_variable(&name);
-				value.compile(builder)?;
+				value.compile(builder, BuildContext::Normal)?; // All math assignments are normal context.
 				op.compile(builder);
 				builder.store_variable(&name);
 				Ok(())
 			}
 			Self::ShortCircuitAssignment(name, cond, value) => {
-				todo!(); // todo: `Defined`
+				builder.load_variable(&name);
+				let end_jump = builder.defer_jump();
+				value.compile(builder, BuildContext::Normal)?;
+				// note: this is different from short circuit itself!! this allows `a //= "b"`.
+				builder.store_variable(&name);
+				match cond {
+					ShortCircuit::Or => end_jump.jump_if(builder),
+					ShortCircuit::And => end_jump.jump_unless(builder),
+					ShortCircuit::Defined => todo!(),
+				}
+				Ok(())
 			}
 
 			Self::ShortCircuit(cond, lhs, rhs) => {
-				lhs.compile(builder)?;
+				lhs.compile(builder, BuildContext::Logical)?;
 				builder.opcode(Opcode::Dup);
 				let end_jump = builder.defer_jump();
 				builder.opcode(Opcode::Pop);
-				rhs.compile(builder)?;
+				rhs.compile(builder, BuildContext::Logical)?;
 				match cond {
 					ShortCircuit::Or => end_jump.jump_if(builder),
 					ShortCircuit::And => end_jump.jump_unless(builder),
@@ -383,18 +397,17 @@ impl Expression {
 						prev.jump_unless(builder);
 					}
 
-					cond.compile(builder)?;
-					builder.opcode(Opcode::ForcedLogical);
+					cond.compile(builder, BuildContext::Logical)?;
 					to_next = Some(builder.defer_jump());
-					body.compile(builder)?;
+					body.compile(builder, ctx)?;
 					deferred_jumps.push(builder.defer_jump());
 				}
 
 				to_next.unwrap().jump_unless(builder);
 
-				if let Some(eb) = else_body {
+				if let Some(elsebody) = else_body {
 					let jump_to_end = builder.defer_jump();
-					eb.compile(builder)?;
+					elsebody.compile(builder, ctx)?;
 					jump_to_end.jump_unconditional(builder);
 				}
 
@@ -409,9 +422,10 @@ impl Expression {
 				let token = builder.enter_loop();
 				let start = builder.position();
 
-				cond.compile(builder)?;
+				cond.compile(builder, BuildContext::Logical)?;
 				let jump_to_end = builder.defer_jump();
-				body.compile(builder)?;
+				// if we use the return value in the future, then we can forward `ctx`.
+				body.compile(builder, BuildContext::Normal)?;
 				builder.jump_unconditional(start);
 				jump_to_end.jump_unless(builder);
 
@@ -423,7 +437,7 @@ impl Expression {
 			Self::Continue => builder.jump_to_loop_start(),
 			Self::Return(result) => {
 				if let Some(result) = result {
-					result.compile(builder)?;
+					result.compile(builder, BuildContext::Normal)?;
 				} else {
 					builder.load_constant(Value::default());
 				}

@@ -62,7 +62,7 @@ impl Program {
 		let mut num_matches = 0;
 
 		for entry in std::fs::read_dir(start.as_ref())? {
-			num_matches += self.handle(entry?.path(), vm, block)?;
+			num_matches += self.handle(entry?.path(), vm, block, true)?;
 		}
 
 		Ok(num_matches)
@@ -73,6 +73,7 @@ impl Program {
 		name: PathBuf,
 		vm: &mut crate::vm::Vm,
 		block: &crate::vm::Block,
+		recur: bool,
 	) -> PlayResult<usize> {
 		let mut ctx = PlayContext::new(self, name)?;
 		let pathinfo = ctx.into_pathinfo();
@@ -90,13 +91,13 @@ impl Program {
 
 		if matched && self.config.should_print() {
 			let mut stdout = std::io::stdout().lock();
-			stdout.write_all(&pathinfo.path().as_os_str().to_raw_bytes())?;
+			stdout.write_all(&pathinfo.path()._rc().as_os_str().to_raw_bytes())?;
 			self.config.write_line_ending(stdout)?;
 		}
 
-		if pathinfo.is_dir() {
+		if pathinfo.is_dir() && recur {
 			// ensure we take it so the rest of the `pathinfo` struct can be dropped
-			let path = pathinfo.path().clone();
+			let path = pathinfo.path()._rc().clone();
 			drop(pathinfo);
 			match self._play(vm, block, &path) {
 				Ok(match_count) => num_matches += match_count,
@@ -118,7 +119,7 @@ impl Program {
 
 		let mut num_matches = 0;
 		for start in start_positions {
-			num_matches += self.handle(start.clone(), &mut vm, &block)?;
+			num_matches += self.handle(start.clone(), &mut vm, &block, false)?;
 			num_matches += self._play(&mut vm, &block, &start)?;
 		}
 

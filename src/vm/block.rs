@@ -1,7 +1,10 @@
+use crate::play::PathInfo;
 use crate::vm::{Opcode, RunError, Vm};
 use crate::Value;
 use core::cmp::Ordering;
+use os_str_bytes::OsStrBytes;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 
 mod builder;
 pub use builder::*;
@@ -62,6 +65,24 @@ impl Stackframe<'_, '_> {
 		use Opcode::*;
 		let mut args = (0..opcode.arity()).map(|_| self.pop()).collect::<Vec<_>>();
 
+		macro_rules! info {
+			($cond:ident) => {
+				info!($cond, 0)
+			};
+			($cond:ident, $pos:literal) => {
+				if $cond {
+					std::borrow::Cow::Borrowed(self.vm.info())
+				} else if let Value::Text(ref name) = args[$pos] {
+					std::borrow::Cow::Owned(PathInfo::new(&std::path::Path::new(
+						&OsStr::assert_from_raw_bytes(name.as_ref()),
+					))?)
+				} else {
+					panic!("todo: error the argument isnt a path");
+				}
+				.as_ref()
+			};
+		}
+
 		let topush = match opcode {
 			Illegal => unreachable!(),
 			LoadConstant(idx) => self.block.consts[idx].clone(),
@@ -105,52 +126,61 @@ impl Stackframe<'_, '_> {
 			UPositive => todo!(),
 			ForcedLogical => args[0].logical(self.vm)?.into(),
 
-			Add => args[0].add(&args[1])?,
-			Subtract => args[0].subtract(&args[1])?,
-			Multiply => args[0].multiply(&args[1])?,
-			Divide => args[0].divide(&args[1])?,
-			Modulo => args[0].modulo(&args[1])?,
+			Add => args[1].add(&args[0])?,
+			Subtract => args[1].subtract(&args[0])?,
+			Multiply => args[1].multiply(&args[0])?,
+			Divide => args[1].divide(&args[0])?,
+			Modulo => args[1].modulo(&args[0])?,
 
-			Matches => todo!(),
-			NotMatches => todo!(),
-			Equal => (args[0].compare(&args[1])? == Ordering::Equal).into(),
-			NotEqual => (args[0].compare(&args[1])? != Ordering::Equal).into(),
-			LessThan => (args[0].compare(&args[1])? < Ordering::Equal).into(),
-			LessThanOrEqual => (args[0].compare(&args[1])? <= Ordering::Equal).into(),
-			GreaterThan => (args[0].compare(&args[1])? > Ordering::Equal).into(),
-			GreaterThanOrEqual => (args[0].compare(&args[1])? >= Ordering::Equal).into(),
+			Matches => args[1].matches(&args[0])?.into(),
+			NotMatches => (!args[1].matches(&args[0])?).into(),
+			Equal => (args[1].compare(&args[0])? == Ordering::Equal).into(),
+			NotEqual => (args[1].compare(&args[0])? != Ordering::Equal).into(),
+			LessThan => (args[1].compare(&args[0])? < Ordering::Equal).into(),
+			LessThanOrEqual => (args[1].compare(&args[0])? <= Ordering::Equal).into(),
+			GreaterThan => (args[1].compare(&args[0])? > Ordering::Equal).into(),
+			GreaterThanOrEqual => (args[1].compare(&args[0])? >= Ordering::Equal).into(),
 
 			// Querying
-			IsFile { implicit } => todo!(),
-			IsDirectory { implicit } => todo!(),
+			IsFile { implicit } => info!(implicit).is_file().into(),
+			IsDirectory { implicit } => info!(implicit).is_dir().into(),
 			IsExecutable { implicit } => todo!(),
 			IsSymlink { implicit } => todo!(),
 			IsBinary { implicit } => todo!(),
-			IsHidden { implicit } => todo!(),
+			IsHidden { implicit } => info!(implicit).is_hidden().into(),
 			IsGitIgnored { implicit } => todo!(),
 			IsOk(_usize) => todo!(),
 
 			// Path-related funcitons
-			FileSize { implicit: true } => self.vm.info().content_size().into(),
-			FileSize { implicit: false } => todo!(),
-			PushRoot => todo!(),
-			PushPath => todo!(),
+			FileSize { implicit } => info!(implicit).content_size().into(),
+			PushRoot => self.vm.root().clone().into(),
+			PushPath => self.vm.info().path()._rc().clone().into(),
 			PushPwd => todo!(),
-			Dirname { implicit } => todo!(),
-			Extname { implicit } => todo!(),
-			ExtnameDot { implicit } => todo!(),
-			Basename { implicit } => todo!(),
-			Stemname { implicit } => todo!(),
+			Dirname { implicit } => info!(implicit).path().parent().into(),
+			Extname { implicit } => info!(implicit).path().extension().into(),
+			ExtnameDot { implicit } => info!(implicit).extnamedot().into(),
+			Basename { implicit } => info!(implicit).path().base().into(),
+			Stemname { implicit } => info!(implicit).path().stem().into(),
 
 			// Misc
-			Print(_usize) => todo!(),
-			Write(_usize) => todo!(), // same as print just no newline at end
+			Print(_usize) | Write(_usize) => {
+				for arg in args.iter().rev() {
+					match arg {
+						Value::Text(txt) => print!("{}", String::from_utf8_lossy(&txt)),
+						other => print!("{other:?}"),
+					}
+				}
+				if matches!(opcode, Print(_)) {
+					println!(); // todo: println `\0`?
+				}
+				args.remove(0)
+			}
 			Skip => todo!(),
-			Quit { implicit } => todo!(),
+			Quit { implicit } => std::process::exit(if implicit { 0 } else { todo!("top to int") }),
 			Depth { implicit } => todo!(),
 			Sleep { implicit } => todo!(),
 
-			// Interactiv => todo!()e
+			// Interactive
 			Mv { implicit, force } => todo!(),
 			Rm { implicit, force } => todo!(),
 			RmR { implicit, force } => todo!(),

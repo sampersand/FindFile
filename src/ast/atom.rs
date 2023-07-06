@@ -1,7 +1,7 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::{PlayContext, PlayResult, RunContextOld};
-use crate::vm::{Builder, Opcode};
+use crate::vm::{block::BuildContext, Builder, Opcode};
 use crate::Regex;
 use crate::{DateTime, FileSize, PathGlob, Value};
 use os_str_bytes::{OsStrBytes, OsStringBytes};
@@ -198,23 +198,23 @@ impl Atom {
 }
 
 impl Atom {
-	pub fn compile(self, builder: &mut Builder) -> Result<(), ParseError> {
+	pub fn compile(self, builder: &mut Builder, ctx: BuildContext) -> Result<(), ParseError> {
 		match self {
 			Self::Not(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, BuildContext::Logical);
 				builder.opcode(Opcode::Not);
 			}
 			Self::Negate(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, BuildContext::Normal);
 				builder.opcode(Opcode::Negate);
 			}
 			Self::UPositive(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, BuildContext::Normal);
 				builder.opcode(Opcode::UPositive);
 			}
 			Self::Block(_block) => todo!(),
 			Self::ForcedLogical(atom) => {
-				atom.compile(builder);
+				atom.compile(builder, BuildContext::Logical);
 				builder.opcode(Opcode::ForcedLogical);
 			}
 
@@ -232,7 +232,13 @@ impl Atom {
 				panic!("todo: flags");
 			}
 
-			Self::Value(value) => builder.load_constant(value),
+			Self::Value(value) => {
+				builder.load_constant(value);
+				if ctx != BuildContext::Normal {
+					// todo: better solution than forced logical, preferably a unique opcode.
+					builder.opcode(Opcode::ForcedLogical);
+				}
+			}
 
 			Self::Variable(variable) => {
 				// only builtin functions can be called without parens.
@@ -242,20 +248,23 @@ impl Atom {
 			}
 
 			Self::FnCall(func, args) => {
+				if !matches!(*func, Self::Variable(_)) {
+					func.clone().compile(builder, BuildContext::Normal);
+				}
+
 				let arglen = args.len();
 				for arg in args {
-					arg.compile(builder);
+					arg.compile(builder, BuildContext::Normal);
 				}
 
 				if let Self::Variable(name) = &*func {
-					if !Opcode::compile_fn_call(&name, arglen, builder) {
-						builder.load_variable(&name);
-						builder.opcode(Opcode::GenericCall(arglen));
+					if Opcode::compile_fn_call(&name, arglen, builder) {
 						return Ok(());
 					}
+
+					builder.load_variable(&name);
 				}
 
-				func.compile(builder);
 				builder.opcode(Opcode::GenericCall(arglen));
 			}
 		}
