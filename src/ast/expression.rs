@@ -1,6 +1,6 @@
 use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult, RunContextOld};
+use crate::play::{PlayContext, PlayResult};
 use crate::vm::block::{BuildContext, Builder};
 use crate::vm::Opcode;
 use crate::Value;
@@ -257,73 +257,6 @@ impl Expression {
 				beginnings
 			}
 			_ => vec![],
-		}
-	}
-}
-
-impl Expression {
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Value> {
-		match self {
-			Self::Atom(atom) => atom.run(ctx, rctx),
-			Self::Math(op, lhs, rhs) => {
-				op.run(&lhs.run(ctx, RunContextOld::Any)?, &rhs.run(ctx, RunContextOld::Any)?)
-			}
-			Self::Logic(op, lhs, rhs) => op
-				.run(&lhs.run(ctx, RunContextOld::Any)?, &rhs.run(ctx, RunContextOld::Any)?)
-				.map(Value::from),
-			Self::Assignment(name, op, rhs) => {
-				let value = if let Some(op) = op {
-					let old = ctx.lookup_var(name)?;
-					op.run(&old, &rhs.run(ctx, RunContextOld::Any)?)?
-				} else {
-					rhs.run(ctx, RunContextOld::Any)?
-				};
-
-				ctx.assign_var(name, value.clone());
-				Ok(value)
-			}
-			Self::ShortCircuitAssignment(sc, lhs, rhs) => {
-				todo!()
-				// let value = if let Some(op) = op {
-				// 	let old = ctx.lookup_var(name);
-				// 	op.run(&old, &rhs.run(ctx, RunContextOld::Any)?)?
-				// } else {
-				// 	rhs.run(ctx, RunContextOld::Any)?
-				// };
-
-				// ctx.assign_var(name, value.clone());
-				// Ok(value)
-			}
-
-			Self::ShortCircuit(sc, lhs, rhs) => {
-				let lhs = lhs.run(ctx, RunContextOld::Logical)?;
-				if lhs.is_truthy_old() == (*sc == ShortCircuit::And) {
-					rhs.run(ctx, RunContextOld::Logical)
-				} else {
-					Ok(lhs)
-				}
-			}
-
-			Self::If(conds, else_body) => {
-				for (cond, body) in conds.iter() {
-					if cond.run(ctx, RunContextOld::Logical)?.is_truthy_old() {
-						return body.run(ctx, rctx);
-					}
-				}
-				if let Some(e) = else_body {
-					e.run(ctx, rctx)
-				} else {
-					Ok(Value::default())
-				}
-			}
-
-			// If(Box<Self>, Box<Self>, Vec<(Self, Self)>, Option<Box<Self>>),
-			// While(Box<Self>, Box<Self>),
-			// Break,
-			// Continue,
-			Self::Return(thing) => Ok(dbg!(thing.as_ref().unwrap().run(ctx, rctx)?)),
-			// FnDecl(String, Vec<String>, Box<Self>),
-			_ => todo!(),
 		}
 	}
 }

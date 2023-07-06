@@ -36,6 +36,10 @@ impl FileSize {
 		self.0
 	}
 
+	pub const fn is_empty(self) -> bool {
+		self.0 == 0
+	}
+
 	pub const fn mul(self, rhs: u64) -> Self {
 		Self::from_bytes(self.bytes() * rhs)
 	}

@@ -1,6 +1,6 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult, RunContextOld};
+use crate::play::{PlayContext, PlayResult};
 use crate::vm::{block::BuildContext, Builder, Opcode};
 use crate::Regex;
 use crate::{DateTime, FileSize, PathGlob, Value};
@@ -152,49 +152,6 @@ impl Atom {
 			None => Ok(None),
 		}
 	}
-}
-
-impl Atom {
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Value> {
-		match (self, rctx) {
-			(Self::ForcedLogical(atom), _) => atom.run(ctx, RunContextOld::Logical),
-			(Self::Not(atom), _) => {
-				atom.run(ctx, RunContextOld::Logical).map(|x| (!x.is_truthy_old()).into())
-			}
-			(Self::Negate(atom), RunContextOld::Logical)
-				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
-			{
-				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
-				Ok((ctx.info().content_size() < fs).into())
-			}
-			(Self::UPositive(atom), RunContextOld::Logical)
-				if matches!(&**atom, Self::Value(Value::FileSize { .. })) =>
-			{
-				let Self::Value(Value::FileSize { fs, precision: _ }) = **atom else { unreachable!() };
-				Ok((ctx.info().content_size() > fs).into())
-			}
-			(Self::Variable(var), _) => ctx.lookup_var(var),
-			(Self::Block(block), _) => block.run(ctx, rctx),
-			(Self::Value(val), _) => val.run(ctx, rctx),
-			// Self::String(s) => Ok(ctx.is_file()?
-			// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
-			// Self::
-			other => todo!("{other:?}"),
-		}
-	}
-
-	// pub fn matches(&self, ctx: &mut PlayContext) -> PlayResult<bool> {
-	// 	match self {
-	// 		Self::String(s) => Ok({
-	// 			ctx.is_file() && slice_contains(&ctx.contents()?.to_raw_bytes(), &s.to_raw_bytes())
-	// 		}),
-	// 		Self::Variable(var) => Ok(ctx.lookup_var(var).is_truthy_old()),
-	// 		// Self::String(s) => Ok(ctx.is_file()?
-	// 		// 	&& ctx.contents()?.to_str().expect("todo").contains(s.to_str().expect("todo1"))),
-	// 		// Self::
-	// 		other => todo!("{other:?}"),
-	// 	}
-	// }
 }
 
 impl Atom {

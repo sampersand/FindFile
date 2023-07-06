@@ -115,13 +115,13 @@ impl Stackframe<'_, '_> {
 				return Ok(None);
 			}
 			JumpIf(position) | JumpUnless(position) => {
-				if args[0].is_truthy(self.vm)? == matches!(opcode, Opcode::JumpIf(_)) {
+				if args[0].logical(self.vm)? == matches!(opcode, Opcode::JumpIf(_)) {
 					self.jump_to(position);
 				}
 				return Ok(None);
 			}
 
-			Not => (!args[0].is_truthy(self.vm)?).into(),
+			Not => (!args[0].logical(self.vm)?).into(),
 			Negate => todo!(),
 			UPositive => todo!(),
 			ForcedLogical => args[0].logical(self.vm)?.into(),

@@ -10,6 +10,7 @@ pub use vm::Vm;
 #[derive(Debug)]
 pub enum RunError {
 	Io(std::io::Error),
+	InvalidType { func: &'static str, given: &'static str },
 }
 
 pub type RunResult<T> = Result<T, RunError>;

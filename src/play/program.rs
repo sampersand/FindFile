@@ -2,7 +2,6 @@ use crate::ast::Expression;
 use crate::play::Env;
 use crate::play::PathInfo;
 use crate::play::PlayError;
-use crate::play::RunContextOld;
 use crate::play::{PlayContext, PlayResult};
 use crate::Value;
 use os_str_bytes::OsStrBytes;
@@ -78,8 +77,7 @@ impl Program {
 		let mut ctx = PlayContext::new(self, name)?;
 		let pathinfo = ctx.into_pathinfo();
 		vm.set_pathinfo(pathinfo.clone());
-		let matched = block.run(vm).map_or(Ok(false), |x| x.is_truthy(vm))?;
-		// let matched = expr.run(&mut ctx, RunContextOld::Logical).map_or(false, |x| x.is_truthy_old());
+		let matched = block.run(vm).map_or(false, |x| x.is_truthy());
 
 		// Invert `matched` if given the `!` flag.
 		let matched = if self.config.is_inverted() { !matched } else { matched };

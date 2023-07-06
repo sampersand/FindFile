@@ -2,7 +2,6 @@ use crate::ast::{Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
 use crate::play::PlayContext;
 use crate::play::PlayResult;
-use crate::play::RunContextOld;
 use crate::Value;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -24,15 +23,5 @@ impl Block {
 		}
 
 		Ok(Self(args))
-	}
-
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Value> {
-		let mut last = None;
-
-		for expr in &self.0 {
-			last = Some(expr.run(ctx, rctx)?);
-		}
-
-		Ok(last.unwrap_or_default())
 	}
 }

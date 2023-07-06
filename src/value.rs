@@ -1,6 +1,5 @@
-use crate::play::{PlayContext, PlayResult, RunContextOld};
-use crate::vm::RunResult;
-use crate::vm::Vm;
+use crate::play::{PlayContext, PlayResult};
+use crate::vm::{RunError, RunResult, Vm};
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use os_str_bytes::RawOsStr;
@@ -24,37 +23,32 @@ pub enum Value {
 
 impl Default for Value {
 	fn default() -> Self {
-		Self::Text(vec![].into())
+		Self::from(<&RawOsStr>::default())
 	}
 }
 
 impl Value {
-	pub fn is_truthy_old(&self) -> bool {
+	pub fn is_truthy(&self) -> bool {
 		match self {
 			Self::Text(v) => !v.is_empty(),
 			Self::Number(v) => *v != 0.0,
-			_ => todo!("{:?}", self),
-		}
-	}
-
-	pub fn is_truthy(&self, vm: &mut Vm) -> RunResult<bool> {
-		match self {
-			Self::Text(v) => Ok(!v.is_empty()),
-			Self::Number(v) => Ok(*v != 0.0),
-			Self::AssocArray(ary) => Ok(!ary.is_empty()),
+			Self::AssocArray(ary) => !ary.is_empty(),
+			Self::FileSize { fs, precision: _ } => !fs.is_empty(),
 			Self::Path(path) => todo!(),
-			Self::PathGlob(glob) => Ok(glob.is_match(&vm.info().path()._rc())),
-			Self::FileSize { fs, precision } => {
-				Ok(fs.fuzzy_matches(vm.info().content_size(), *precision))
-			}
-			Self::Regex(regex) => Ok(regex.is_match(&vm.info_mut().contents()?)),
+			Self::PathGlob(glob) => todo!(),
+			Self::Regex(regex) => todo!(),
 		}
 	}
 
 	pub fn logical(&self, vm: &mut Vm) -> RunResult<bool> {
 		match self {
 			Self::Text(v) => Ok(vm.info_mut().contents_contains(v)?),
-			other => self.is_truthy(vm),
+			Self::PathGlob(glob) => Ok(glob.is_match(&vm.info().path()._rc())),
+			Self::FileSize { fs, precision } => {
+				Ok(fs.fuzzy_matches(vm.info().content_size(), *precision))
+			}
+			Self::Regex(regex) => Ok(regex.is_match(&vm.info_mut().contents()?)),
+			other => Ok(self.is_truthy()),
 		}
 	}
 
@@ -73,30 +67,23 @@ impl Value {
 		}
 	}
 
-	pub fn run(&self, ctx: &mut PlayContext, rctx: RunContextOld) -> PlayResult<Self> {
-		match (self, rctx) {
-			(Self::Text(s), RunContextOld::Logical) => {
-				Ok((ctx.is_file() && ctx.info_mut().contents_contains(&s)?).into())
-			}
-			(Self::FileSize { fs, precision }, RunContextOld::Logical) => {
-				Ok(fs.fuzzy_matches(ctx.info().content_size(), *precision).into())
-			}
-
-			(Self::Regex(regex), RunContextOld::Logical) => {
-				Ok(regex.is_match(&ctx.contents()?).into())
-			}
-			(Self::PathGlob(glob), RunContextOld::Logical) => {
-				Ok(glob.is_match(&ctx.info().path()._rc()).into())
-			}
-
-			(_, RunContextOld::Any) => Ok(self.clone()),
-			(Self::Number(x), RunContextOld::Logical) => Ok((*x != 0.0).into()),
-			_ => todo!(),
+	pub fn typename(&self) -> &'static str {
+		match self {
+			Self::AssocArray(_) => "array",
+			Self::Text(_) => "string",
+			Self::Number(_) => "number",
+			Self::Path(_) => "path",
+			Self::PathGlob(_) => "pathglob",
+			Self::FileSize { .. } => "filesize",
+			Self::Regex(_) => "regex",
 		}
 	}
 
 	pub fn negate(&self) -> RunResult<Self> {
-		todo!()
+		match self {
+			Self::Number(num) => Ok(Self::Number(-num)),
+			_ => Err(RunError::InvalidType { func: "unary-", given: self.typename() }),
+		}
 	}
 
 	pub fn add(&self, rhs: &Self) -> RunResult<Self> {

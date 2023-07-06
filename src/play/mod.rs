@@ -12,10 +12,3 @@ pub use error::{PlayError, PlayResult};
 pub use path::Path;
 pub use pathinfo::PathInfo;
 pub use program::Program;
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RunContextOld {
-	Logical,
-	#[default]
-	Any, // todo: rename to normal
-}
