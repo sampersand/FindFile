@@ -92,6 +92,10 @@ pub struct Args {
 	#[arg(short = 'e', long, value_enum, value_name = "ERRS")]
 	pub ignored_errors: Vec<IgnoreErrors>,
 
+	/// Run the expression only once, with no current file.
+	#[arg(long)]
+	pub run_once: bool,
+
 	/// When to prompt for dangerous actions.
 	///
 	/// Dangerous actions are when any of `mv, cp, rm, rmr, ln` would end up deleting or overwriting

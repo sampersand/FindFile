@@ -16,6 +16,7 @@ impl Path {
 		)))
 	}
 
+	/// Fetches the parent directory.
 	pub fn parent(&self) -> &RawOsStr {
 		if let Some((parent, _base)) = self.0.rsplit_once(std::path::MAIN_SEPARATOR) {
 			parent

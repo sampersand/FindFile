@@ -40,7 +40,7 @@ impl Stackframe<'_, '_> {
 	fn next_opcode(&mut self) -> Option<Opcode> {
 		let &op = self.block.code.get(self.ip)?;
 		self.ip += 1;
-		Some(op)
+		Some(dbg!(op))
 	}
 
 	fn run(mut self) -> Result<Value, RunError> {
@@ -122,7 +122,7 @@ impl Stackframe<'_, '_> {
 			}
 
 			Not => (!args[0].logical(self.vm)?).into(),
-			Negate => todo!(),
+			Negate => args[0].negate()?.into(),
 			UPositive => todo!(),
 			ForcedLogical => args[0].logical(self.vm)?.into(),
 

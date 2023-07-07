@@ -511,6 +511,12 @@ impl Token {
 
 		// these all unambiguously indicate a path start
 		if b"*.+/~".contains(&rest[0]) {
+			if (rest[0] == b'*' || rest[0] == b'+')
+				&& rest.get(1).map_or(false, |x| *x == b'=' || x.is_ascii_whitespace())
+			{
+				return false;
+			}
+
 			return true;
 		}
 
@@ -631,6 +637,7 @@ impl Token {
 
 			// Math
 			b'+' => ifeq!(AddAssign, Add),
+			b'*' => ifeq!(MultiplyAssign, Multiply),
 			b'-' => ifeq!(SubtractAssign, Subtract),
 			b'@' => todo!("parse `@` strings (like `%` strings in ruby)"),
 
@@ -665,7 +672,7 @@ impl Token {
 				});
 
 				match buf {
-					b"mul" => ifeq!(MultiplyAssign, Multiply),
+					// b"*" => ifeq!(MultiplyAssign, Multiply),
 					b"div" => ifeq!(DivideAssign, Divide),
 					b"mod" => ifeq!(ModuloAssign, Modulo),
 

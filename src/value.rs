@@ -87,7 +87,10 @@ impl Value {
 	}
 
 	pub fn add(&self, rhs: &Self) -> RunResult<Self> {
-		todo!()
+		match (self, rhs) {
+			(Self::Number(lhs), Self::Number(rhs)) => Ok((lhs + rhs).into()),
+			_ => todo!("{:?} {:?}", self, rhs),
+		}
 	}
 
 	pub fn subtract(&self, rhs: &Self) -> RunResult<Self> {
@@ -165,5 +168,11 @@ impl From<&OsStr> for Value {
 impl From<&RawOsStr> for Value {
 	fn from(osstr: &RawOsStr) -> Self {
 		Self::Text(osstr.as_raw_bytes().to_owned().into())
+	}
+}
+
+impl From<f64> for Value {
+	fn from(num: f64) -> Self {
+		Self::Number(num)
 	}
 }

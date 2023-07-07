@@ -163,7 +163,7 @@ impl Expression {
 						return Err(ParseError::AssignToNonVariable);
 					};
 
-					lhs = Self::Assignment(var, None, rhs.into());
+					lhs = Self::Assignment(var, Some(math), rhs.into());
 				} else {
 					lhs = Self::Math(math, lhs.into(), rhs.into());
 				}
@@ -283,13 +283,15 @@ impl Expression {
 					builder,
 					if ctx == BuildContext::Logical { ctx } else { BuildContext::Normal },
 				)?;
+				builder.opcode(Opcode::Dup); // it returns a value
 				builder.store_variable(&name);
 				Ok(())
 			}
-			Self::Assignment(name, Some(op), value) => {
+			Self::Assignment(name, Some(mop), value) => {
 				builder.load_variable(&name);
 				value.compile(builder, BuildContext::Normal)?; // All math assignments are normal context.
-				op.compile(builder);
+				mop.compile(builder);
+				builder.opcode(Opcode::Dup); // it returns a value
 				builder.store_variable(&name);
 				Ok(())
 			}
@@ -298,6 +300,7 @@ impl Expression {
 				let end_jump = builder.defer_jump();
 				value.compile(builder, BuildContext::Normal)?;
 				// note: this is different from short circuit itself!! this allows `a //= "b"`.
+				builder.opcode(Opcode::Dup); // it returns a value
 				builder.store_variable(&name);
 				match cond {
 					ShortCircuit::Or => end_jump.jump_if(builder),

@@ -116,9 +116,13 @@ impl Program {
 			crate::vm::Vm::compile(Default::default(), expr.clone()).expect("bad expr");
 
 		let mut num_matches = 0;
-		for start in start_positions {
-			num_matches += self.handle(start.clone(), &mut vm, &block, false)?;
-			num_matches += self._play(&mut vm, &block, &start)?;
+		if self.config.run_once() {
+			num_matches += self.handle(".".into(), &mut vm, &block, false)?;
+		} else {
+			for start in start_positions {
+				num_matches += self.handle(start.clone(), &mut vm, &block, false)?;
+				num_matches += self._play(&mut vm, &block, &start)?;
+			}
 		}
 
 		if self.config.is_counting() {

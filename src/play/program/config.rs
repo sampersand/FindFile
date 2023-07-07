@@ -4,6 +4,7 @@ use std::io::{self, Write};
 #[derive(Default, Debug)]
 pub struct Config {
 	dont_print: bool,
+	run_once: bool,
 	count: bool,
 	print0: bool,
 	invert: bool,
@@ -39,6 +40,7 @@ impl From<&crate::cli::Args> for Config {
 			dont_print: args.dont_print || args.count,
 			count: args.count,
 			print0: args.print0,
+			run_once: args.run_once,
 			invert: args.invert,
 			stable: args.stable,
 			jobs: args.jobs.unwrap_or(1),
@@ -88,6 +90,11 @@ impl Config {
 	#[must_use]
 	pub fn should_colour(&self) -> bool {
 		self.colour
+	}
+
+	#[must_use]
+	pub fn run_once(&self) -> bool {
+		self.run_once
 	}
 
 	/// how many jobs to spawn
