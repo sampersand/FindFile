@@ -90,6 +90,11 @@ impl Config {
 		self.colour
 	}
 
+	#[must_use]
+	pub fn ignore_subcommand_errors(&self) -> bool {
+		self.ignore_subcommand_errors
+	}
+
 	/// how many jobs to spawn
 	#[must_use]
 	pub fn jobs(&self) -> usize {

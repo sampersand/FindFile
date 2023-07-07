@@ -1,8 +1,8 @@
 use crate::ast::Expression;
 use crate::parse::ParseError;
 use crate::play::PathInfo;
-use crate::vm::{self, RunResult};
-use crate::vm::{block::BuildContext, Block};
+
+use crate::vm::{self, block::BuildContext, Block};
 use crate::Value;
 use std::collections::HashMap;
 use std::path::Path;
@@ -33,6 +33,10 @@ impl Vm {
 
 	pub fn _set_root(&mut self, root: Rc<Path>) {
 		self.root = Some(root);
+	}
+
+	pub fn config(&self) -> &Config {
+		&self.config
 	}
 
 	pub fn root(&self) -> &Rc<Path> {

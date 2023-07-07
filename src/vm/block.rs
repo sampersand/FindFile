@@ -3,7 +3,6 @@ use crate::vm::{Opcode, RunError, Vm};
 use crate::Value;
 use core::cmp::Ordering;
 use os_str_bytes::OsStrBytes;
-use std::collections::HashMap;
 use std::ffi::OsStr;
 
 mod builder;
@@ -103,7 +102,7 @@ impl Stackframe<'_, '_> {
 			}
 			Pop => return Ok(None),
 
-			GenericCall(amnt) => args[0].call(&args[1..])?,
+			GenericCall(_amnt) => args[0].call(&args[1..])?,
 
 			CreatePath(_usize) => todo!(),
 			CreateRegex(_usize) => todo!(),
@@ -144,11 +143,11 @@ impl Stackframe<'_, '_> {
 			// Querying
 			IsFile { implicit } => info!(implicit).is_file().into(),
 			IsDirectory { implicit } => info!(implicit).is_dir().into(),
-			IsExecutable { implicit } => todo!(),
-			IsSymlink { implicit } => todo!(),
-			IsBinary { implicit } => todo!(),
+			IsExecutable { implicit: _ } => todo!(),
+			IsSymlink { implicit: _ } => todo!(),
+			IsBinary { implicit: _ } => todo!(),
 			IsHidden { implicit } => info!(implicit).is_hidden().into(),
-			IsGitIgnored { implicit } => todo!(),
+			IsGitIgnored { implicit: _ } => todo!(),
 			IsOk(_usize) => todo!(),
 
 			// Path-related funcitons
@@ -177,18 +176,18 @@ impl Stackframe<'_, '_> {
 			}
 			Skip => todo!(),
 			Quit { implicit } => std::process::exit(if implicit { 0 } else { todo!("top to int") }),
-			Depth { implicit } => todo!(),
-			Sleep { implicit } => todo!(),
+			Depth { implicit: _ } => todo!(),
+			Sleep { implicit: _ } => todo!(),
 
 			// Interactive
-			Mv { implicit, force } => todo!(),
-			Rm { implicit, force } => todo!(),
-			RmR { implicit, force } => todo!(),
-			Cp { implicit, force } => todo!(),
-			Ln { implicit, force } => todo!(),
-			LnS { implicit, force } => todo!(),
+			Mv { implicit: _, force: _ } => todo!(),
+			Rm { implicit: _, force: _ } => todo!(),
+			RmR { implicit: _, force: _ } => todo!(),
+			Cp { implicit: _, force: _ } => todo!(),
+			Ln { implicit: _, force: _ } => todo!(),
+			LnS { implicit: _, force: _ } => todo!(),
 			Mkdir => todo!(),
-			Touch { implicit } => todo!(),
+			Touch { implicit: _ } => todo!(),
 		};
 
 		self.push(topush);

@@ -1,10 +1,9 @@
-use crate::play::{PlayContext, PlayResult};
 use crate::vm::{RunError, RunResult, Vm};
 use crate::{FileSize, PathGlob, Regex};
 use os_str_bytes::OsStrBytes;
 use os_str_bytes::RawOsStr;
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 mod assoc_array;
@@ -34,9 +33,9 @@ impl Value {
 			Self::Number(v) => *v != 0.0,
 			Self::AssocArray(ary) => !ary.is_empty(),
 			Self::FileSize { fs, precision: _ } => !fs.is_empty(),
-			Self::Path(path) => todo!(),
-			Self::PathGlob(glob) => todo!(),
-			Self::Regex(regex) => todo!(),
+			Self::Path(_path) => todo!(),
+			Self::PathGlob(_glob) => todo!(),
+			Self::Regex(_regex) => todo!(),
 		}
 	}
 
@@ -48,7 +47,7 @@ impl Value {
 				Ok(fs.fuzzy_matches(vm.info().content_size(), *precision))
 			}
 			Self::Regex(regex) => Ok(regex.is_match(&vm.info_mut().contents()?)),
-			other => Ok(self.is_truthy()),
+			_other => Ok(self.is_truthy()),
 		}
 	}
 
@@ -93,19 +92,19 @@ impl Value {
 		}
 	}
 
-	pub fn subtract(&self, rhs: &Self) -> RunResult<Self> {
+	pub fn subtract(&self, _rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn multiply(&self, rhs: &Self) -> RunResult<Self> {
+	pub fn multiply(&self, _rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn divide(&self, rhs: &Self) -> RunResult<Self> {
+	pub fn divide(&self, _rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
-	pub fn modulo(&self, rhs: &Self) -> RunResult<Self> {
+	pub fn modulo(&self, _rhs: &Self) -> RunResult<Self> {
 		todo!()
 	}
 
@@ -120,7 +119,7 @@ impl Value {
 		}
 	}
 
-	pub fn call(&self, args: &[Self]) -> RunResult<Self> {
+	pub fn call(&self, _args: &[Self]) -> RunResult<Self> {
 		todo!();
 	}
 }

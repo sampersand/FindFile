@@ -1,11 +1,7 @@
 use crate::play::{PathInfo, PlayResult, Program};
-use crate::FileSize;
 use crate::Value;
-use os_str_bytes::OsStringBytes;
-use std::ffi::{OsStr, OsString};
-use std::fs::{DirEntry, FileType, Metadata};
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Debug)]

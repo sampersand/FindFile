@@ -66,7 +66,7 @@ impl PathGlob {
 			.map(|comp| PathPart::parse(comp.as_os_str()))
 			.collect::<Result<_, _>>()?;
 
-		let mut is_dir = source.as_os_str().to_string_lossy().bytes().last()
+		let is_dir = source.as_os_str().to_string_lossy().bytes().last()
 			== Some(std::path::MAIN_SEPARATOR as u8)
 			|| [b"~".as_ref(), b".".as_ref(), b"..".as_ref()]
 				.contains(&source.as_os_str().to_raw_bytes().as_ref());
@@ -153,7 +153,7 @@ impl PathPart {
 		}
 
 		let mut parts = Vec::new();
-		let mut bytes = source.to_raw_bytes();
+		let bytes = source.to_raw_bytes();
 		let mut iter = bytes.iter().copied();
 		let mut current = Vec::new();
 
@@ -210,13 +210,13 @@ impl PathPart {
 		Ok(Self::Globbed(parts))
 	}
 
-	fn is_match(&self, given: &OsStr) -> bool {
-		match self {
-			Self::AnyDirs => true,
-			Self::Normal(lhs) => lhs == given,
-			Self::Globbed(ref parts) => match_globbed_parts(parts, &given.to_raw_bytes()),
-		}
-	}
+	// fn is_match(&self, given: &OsStr) -> bool {
+	// 	match self {
+	// 		Self::AnyDirs => true,
+	// 		Self::Normal(lhs) => lhs == given,
+	// 		Self::Globbed(ref parts) => match_globbed_parts(parts, &given.to_raw_bytes()),
+	// 	}
+	// }
 }
 
 fn match_globbed_parts(parts: &[Glob], given: &[u8]) -> bool {
@@ -275,7 +275,7 @@ impl GlobRange {
 	}
 
 	fn parse(iter: &mut impl Iterator<Item = u8>) -> Result<Self, PathParseError> {
-		let mut byte = iter.next().ok_or(PathParseError::PrematureRangeEnd)?;
+		let byte = iter.next().ok_or(PathParseError::PrematureRangeEnd)?;
 		let negated = byte == b'^';
 		let mut solitary = Vec::new();
 		let mut ranges = Vec::new();

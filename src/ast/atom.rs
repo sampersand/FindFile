@@ -1,11 +1,11 @@
 use crate::ast::{Block, Expression, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult};
+
 use crate::vm::{block::BuildContext, Builder, Opcode};
 use crate::Regex;
-use crate::{DateTime, FileSize, PathGlob, Value};
-use os_str_bytes::{OsStrBytes, OsStringBytes};
-use std::ffi::{OsStr, OsString};
+use crate::{PathGlob, Value};
+use os_str_bytes::OsStrBytes;
+use std::ffi::OsStr;
 
 mod interpolated;
 pub use interpolated::Interpolated;
@@ -133,7 +133,7 @@ impl Atom {
 			Some(Token::FileSize { fs, precision }) => {
 				Ok(Some(Self::Value(Value::FileSize { fs, precision })))
 			}
-			Some(Token::DateTime(dt)) => Ok(Some(Self::Value(todo!() /*Value::DateTime(dt)*/))),
+			Some(Token::DateTime(_dt)) => todo!(), //Ok(Some(Self::Value(todo!() /*Value::DateTime(dt)*/))),
 			Some(Token::CliArg(pos)) => {
 				let cli = lctx.get_cli(pos).ok_or(ParseError::InvalidCliPosition(pos))?;
 				Ok(Some(Self::Value(Value::Text(cli.to_raw_bytes().into_owned().into()))))
@@ -158,20 +158,20 @@ impl Atom {
 	pub fn compile(self, builder: &mut Builder, ctx: BuildContext) -> Result<(), ParseError> {
 		match self {
 			Self::Not(atom) => {
-				atom.compile(builder, BuildContext::Logical);
+				atom.compile(builder, BuildContext::Logical)?;
 				builder.opcode(Opcode::Not);
 			}
 			Self::Negate(atom) => {
-				atom.compile(builder, BuildContext::Normal);
+				atom.compile(builder, BuildContext::Normal)?;
 				builder.opcode(Opcode::Negate);
 			}
 			Self::UPositive(atom) => {
-				atom.compile(builder, BuildContext::Normal);
+				atom.compile(builder, BuildContext::Normal)?;
 				builder.opcode(Opcode::UPositive);
 			}
 			Self::Block(_block) => todo!(),
 			Self::ForcedLogical(atom) => {
-				atom.compile(builder, BuildContext::Logical);
+				atom.compile(builder, BuildContext::Logical)?;
 				builder.opcode(Opcode::ForcedLogical);
 			}
 
@@ -206,12 +206,12 @@ impl Atom {
 
 			Self::FnCall(func, args) => {
 				if !matches!(*func, Self::Variable(_)) {
-					func.clone().compile(builder, BuildContext::Normal);
+					func.clone().compile(builder, BuildContext::Normal)?;
 				}
 
 				let arglen = args.len();
 				for arg in args {
-					arg.compile(builder, BuildContext::Normal);
+					arg.compile(builder, BuildContext::Normal)?;
 				}
 
 				if let Self::Variable(name) = &*func {

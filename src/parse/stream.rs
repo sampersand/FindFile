@@ -78,7 +78,7 @@ impl<'a> Stream<'a> {
 	}
 
 	/// Advances the stream forward if `condition` matches.
-	pub fn advance_if<C: TakeCondition<'a>>(&mut self, mut condition: C) -> bool {
+	pub fn advance_if<C: TakeCondition<'a>>(&mut self, condition: C) -> bool {
 		self.take_if(condition).is_some()
 	}
 

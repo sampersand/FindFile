@@ -44,7 +44,7 @@ impl<'a> LexContext<'a> {
 	}
 
 	pub fn get_env<'b>(&'b mut self, name: &OsStr) -> Option<&'b OsStr> {
-		let mut env = &mut self.env;
+		let env = &mut self.env;
 
 		if !env.contains_key(name) {
 			env.insert(name.to_owned(), std::env::var_os(name));

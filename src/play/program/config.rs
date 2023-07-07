@@ -118,6 +118,10 @@ impl Config {
 		}
 	}
 
+	pub fn ignore_subcommand_errors(&self) -> bool {
+		self.ignore_subcommand_errors
+	}
+
 	pub fn handle_error(&self, err: PlayError) -> PlayResult<()> {
 		match err {
 			PlayError::Io(_) if self.ignore_os_errors => Ok(()),

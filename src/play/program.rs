@@ -1,15 +1,10 @@
 use crate::ast::Expression;
-use crate::play::Env;
-use crate::play::PathInfo;
-use crate::play::PlayError;
-use crate::play::{PlayContext, PlayResult};
+use crate::play::{Env, PlayContext, PlayResult};
 use crate::Value;
 use os_str_bytes::OsStrBytes;
 use std::collections::HashMap;
-use std::ffi::OsString;
-use std::io::{ErrorKind as IoErrorKind, Write};
-use std::path::Path;
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
 mod config;
 pub use config::Config;
@@ -74,7 +69,7 @@ impl Program {
 		block: &crate::vm::Block,
 		recur: bool,
 	) -> PlayResult<usize> {
-		let mut ctx = PlayContext::new(self, name)?;
+		let ctx = PlayContext::new(self, name)?;
 		let pathinfo = ctx.into_pathinfo();
 		vm.set_pathinfo(pathinfo.clone());
 		let matched = block.run(vm).map_or(false, |x| x.is_truthy());

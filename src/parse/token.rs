@@ -3,7 +3,7 @@ use crate::parse::Stream;
 use crate::parse::{LexContext, ParseError, Phase};
 use os_str_bytes::OsStringBytes;
 use std::ffi::OsString;
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::Debug;
 
 /*
 IDEAS:::
@@ -459,7 +459,7 @@ impl Token {
 				Some(Phase::WithinString) => Err(ParseError::MissingEndQuote),
 				Some(Phase::WithinRegex) => Err(ParseError::MissingEndRegex),
 				None => Ok(None),
-				other => unimplemented!("todo: what are the conditions that this can happen?"),
+				_other => unimplemented!("todo: what are the conditions that this can happen?"),
 			};
 		}
 

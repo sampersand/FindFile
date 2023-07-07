@@ -1,6 +1,5 @@
 use crate::FileSize;
-use os_str_bytes::OsStrBytes;
-use os_str_bytes::{RawOsStr, RawOsString};
+use os_str_bytes::{OsStrBytes, RawOsString};
 use std::ffi::OsStr;
 use std::fs::Metadata;
 use std::io;

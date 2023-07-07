@@ -1,6 +1,5 @@
-use crate::ast::{Atom, Block, LogicOperator, MathOperator, Precedence};
+use crate::ast::{Atom, LogicOperator, MathOperator, Precedence};
 use crate::parse::{LexContext, ParseError, Token};
-use crate::play::{PlayContext, PlayResult};
 use crate::vm::block::{BuildContext, Builder};
 use crate::vm::Opcode;
 use crate::Value;
@@ -191,10 +190,6 @@ impl Expression {
 		Ok(Some(lhs))
 	}
 
-	pub fn parse_until1(lctx: &mut LexContext, until: Token) -> Result<Self, ParseError> {
-		todo!();
-	}
-
 	// im not really confident in this algorithm; in the future i'll make it more robust.
 	pub fn begin_position(&self) -> Vec<PathBuf> {
 		match self {
@@ -381,7 +376,7 @@ impl Expression {
 				builder.opcode(Opcode::Return);
 				Ok(())
 			}
-			Self::FnDecl(name, args, body) => todo!(),
+			Self::FnDecl(_name, _args, _body) => todo!(),
 		}
 	}
 }

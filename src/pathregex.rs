@@ -1,6 +1,6 @@
 use os_str_bytes::{OsStrBytes, OsStringBytes};
-use std::ffi::{OsStr, OsString};
-use std::path::{Component, Path, PathBuf};
+use std::ffi::OsString;
+use std::path::{Component, Path};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PathRegex {
@@ -13,7 +13,6 @@ enum PathStart {
 	Root,
 	Pwd,
 	Parent,
-	None,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,7 +28,7 @@ enum Part {
 	Literal(OsString),
 	ZeroOrMore,
 	AnyCharcater,
-	CharRange(Vec<u8>), // todo: do this better than just a char range.
+	// CharRange(Vec<u8>), // todo: do this better than just a char range.
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,7 +60,7 @@ impl DirKind {
 		let mut parts = Vec::new();
 		let mut literal = Vec::new();
 		let raw = source.to_raw_bytes();
-		let mut iter = raw.iter();
+		let iter = raw.iter();
 
 		for &byte in iter {
 			if !b"?*[".contains(&byte) {
@@ -123,10 +122,6 @@ impl PathRegex {
 		Ok(Self { start, dirs })
 	}
 
-	pub fn parse(source: &OsStr) -> Result<Self, PathParseError> {
-		todo!()
-	}
-
 	// nb: this function needs a lot of work. it doesn't properly handle htings like
 	// `self: "./foo/bar/baz" ` and `path: $PWD/foo/bar/baz` being equivalent...
 	/*
@@ -135,7 +130,7 @@ impl PathRegex {
 			begin at that starting point. if so, then just make `path` the remainder.
 
 	*/
-	pub fn matches<T: AsRef<Path> + ?Sized>(&self, path: &T) -> PathMatch {
+	pub fn matches<T: AsRef<Path> + ?Sized>(&self, _path: &T) -> PathMatch {
 		// 	let path = path.as_ref();
 		// 	let mut components = path.components();
 
