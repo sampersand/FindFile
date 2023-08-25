@@ -23,6 +23,7 @@ pub enum Atom {
 	InterpolatedRegex(Interpolated, RegexFlags),
 
 	Value(Value),
+	Regex(Regex),
 	Variable(String),
 
 	FnCall(Box<Self>, Vec<Expression>), // note that only variables and blocks are the first arg.
@@ -71,7 +72,7 @@ impl Atom {
 		let Token::EndRegex(flags) = flags else { unreachable!(); };
 
 		if interpolated.parts.is_empty() {
-			return Ok(Self::Value(Value::Regex(Regex::new(&interpolated.tail, &flags)?)));
+			return Ok(Self::Regex(Regex::new(&interpolated.tail, &flags)?));
 		} else {
 			todo!();
 		}
@@ -187,6 +188,18 @@ impl Atom {
 				let amount = interpolated.compile(builder);
 				builder.opcode(Opcode::CreateRegex(amount));
 				panic!("todo: flags");
+			}
+
+			Self::Regex(regex) => {
+				// for name in regex.capture_names() {
+				// 	builder.declare_variable(name);
+				// }
+				builder.load_constant(Value::Regex(regex));
+				// builder.opcode(Opcode::RegexMatch);
+				if ctx != BuildContext::Normal {
+					// todo: better solution than forced logical, preferably a unique opcode.
+					builder.opcode(Opcode::ForcedLogical);
+				}
 			}
 
 			Self::Value(value) => {

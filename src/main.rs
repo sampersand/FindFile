@@ -8,7 +8,6 @@ use findfile::parse::LexContext;
 use findfile::play::program::{Config, Program};
 use findfile::play::Env;
 use findfile::play::{PlayError, PlayResult};
-use findfile::PathRegex;
 use std::process::ExitCode;
 
 fn main() -> ExitCode {

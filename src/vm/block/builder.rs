@@ -41,6 +41,17 @@ impl<'a> Builder<'a> {
 		self.code.push(op);
 	}
 
+	// returns Ok(x) if it's a global, Err(x) if it's an argument.
+	pub fn declare_variable(&mut self, name: &str) {
+		if self.arguments.iter().position(|x| x == name).is_some() {
+			return;
+		}
+
+		if !self.global_vars.contains_key(name) {
+			self.global_vars.insert(name.to_owned(), self.global_vars.len());
+		}
+	}
+
 	pub fn load_variable(&mut self, name: &str) {
 		if let Some(idx) = self.arguments.iter().position(|x| x == name) {
 			self.opcode(Opcode::LoadArgument(idx));

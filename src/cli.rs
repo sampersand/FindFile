@@ -118,6 +118,10 @@ pub struct Args {
 	#[arg(short, long, overrides_with_all=["prompt", "force"])]
 	pub interactive: bool,
 
+	/// Print out changes that'd happen but don't execute them. Implies `-n`
+	#[arg(short, long)]
+	pub dry: bool,
+
 	/// Never ask before doing anything destructive.
 	///
 	/// This is identical to `--prompt=never`.

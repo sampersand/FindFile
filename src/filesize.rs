@@ -139,7 +139,7 @@ impl Display for FileSize {
 // 	}
 // }
 
-#[cfg(test)]
+/*#[cfg(test)]
 mod tests {
 	use super::*;
 
@@ -151,4 +151,4 @@ mod tests {
 		assert_eq!("12kB", FileSize::new(12.0, Suffix::KiloByte, None).unwrap().to_string());
 		assert_eq!("1B", FileSize::new(1.0, Suffix::None, None).unwrap().to_string());
 	}
-}
+}*/

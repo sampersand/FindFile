@@ -4,13 +4,12 @@ pub mod ast;
 pub mod cli;
 pub mod filesize;
 pub mod parse;
+// pub mod parse2;
 pub mod pathglob;
-pub mod pathregex;
 pub mod play;
 mod regex;
 mod value;
 pub mod vm;
-pub use pathregex::{PathParseError, PathRegex};
 pub use regex::Regex;
 pub use value::Value;
 
