@@ -1,4 +1,5 @@
 // #![allow(unused)]
+extern crate static_assertions as sa;
 
 pub mod ast;
 pub mod cli;

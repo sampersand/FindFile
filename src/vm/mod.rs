@@ -1,5 +1,6 @@
 pub mod block;
 mod opcode;
+mod opcode2;
 
 pub use block::{Block, Builder};
 pub use opcode::Opcode;
