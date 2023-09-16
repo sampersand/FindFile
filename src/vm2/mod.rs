@@ -1,6 +1,8 @@
 #![allow(unused)]
 pub mod block;
 mod opcode;
+mod stack;
+use stack::Stack;
 
 pub use block::{Block, Builder};
 pub use opcode::Opcode;

@@ -1,6 +1,18 @@
 // #![allow(unused)]
 extern crate static_assertions as sa;
 
+macro_rules! likely {
+	($x:expr) => {
+		$x
+	};
+}
+
+macro_rules! unlikely {
+	($x:expr) => {
+		$x
+	};
+}
+
 pub mod ast;
 pub mod cli;
 pub mod filesize;
@@ -11,6 +23,7 @@ pub mod play;
 mod regex;
 mod value;
 pub mod vm;
+pub mod vm2;
 pub use regex::Regex;
 pub use value::Value;
 
