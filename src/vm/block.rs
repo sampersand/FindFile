@@ -39,7 +39,7 @@ impl Stackframe<'_, '_> {
 	fn next_opcode(&mut self) -> Option<Opcode> {
 		let &op = self.block.code.get(self.ip)?;
 		self.ip += 1;
-		Some(dbg!(op))
+		Some(op)
 	}
 
 	fn run(mut self) -> Result<Value, RunError> {
